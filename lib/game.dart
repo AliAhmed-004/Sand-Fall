@@ -514,6 +514,16 @@ class SandGame extends FlameGame with TapCallbacks {
       // Only end combo if no bridges were found
       // If bridges were found, the board will be unstable again and combo continues
       ScoringService.instance.endClearSessionIfNoBridges(anyBridgesCleared);
+
+      // Only evaluate game over after all bridge clears have been resolved.
+      if (!anyBridgesCleared && _cellsToClears.isEmpty && sandWorld.isStable) {
+        sandWorld.evaluateGameOverCondition();
+      }
+    }
+
+    // Catch stable frames where no transition happened this update.
+    if (_cellsToClears.isEmpty && sandWorld.isStable && !_needsSimulation) {
+      sandWorld.evaluateGameOverCondition();
     }
 
     if (_hasPendingAutosave && sandWorld.isStable && !_needsSimulation) {

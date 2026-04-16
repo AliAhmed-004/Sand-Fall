@@ -538,7 +538,6 @@ class SandWorld {
     _isStable = !anyMovement;
 
     if (_isStable) {
-      _checkGameOverCondition();
       _activeListDirty = true; // force rebuild next time
     }
 
@@ -546,8 +545,8 @@ class SandWorld {
   }
 
   /// Checks if sand has reached the top threshold (top 10% of grid).
-  /// If so, marks the game as over.
-  void _checkGameOverCondition() {
+  /// Call this only after clear resolution and post-clear stabilization.
+  void evaluateGameOverCondition() {
     if (_isGameOver) return; // Already game over, no need to check again
 
     for (int y = 0; y < _gameOverThresholdRow; y++) {
