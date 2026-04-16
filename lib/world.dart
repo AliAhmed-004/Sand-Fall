@@ -757,19 +757,6 @@ class SandWorld {
     _bfsTail = 0;
     _clearIndicesCount = 0;
 
-    // Start BFS from all cells of the target color on the left edge
-    for (int y = 0; y < rows; y++) {
-      final idx = y * cols;
-      if (gridColorBuffer[idx] != 0 && baseColorIdBuffer[idx] == colorId) {
-        _visitStampBuffer[idx] = _visitStamp;
-        _bfsQueue[_bfsTail++] = idx;
-        _clearIndicesBuffer[_clearIndicesCount++] = idx;
-      }
-    }
-
-    // Track if we reach the right edge during BFS
-    bool reachesRight = false;
-
     // 8-directional neighbors to ensure we clear diagonally connected bridges as well
     final neighbors = [
       1,
@@ -782,47 +769,62 @@ class SandWorld {
       -cols - 1,
     ];
 
-    // Standard BFS loop
-    while (_bfsHead < _bfsTail) {
-      final currIdx = _bfsQueue[_bfsHead++];
-      final cx = currIdx % cols;
-      if (cx == cols - 1) {
-        reachesRight = true;
+    // Evaluate one connected component at a time from left-edge seeds.
+    // Only clear the component that actually reaches the right edge.
+    for (int y = 0; y < rows; y++) {
+      final seedIdx = y * cols;
+      if (gridColorBuffer[seedIdx] == 0 || baseColorIdBuffer[seedIdx] != colorId) {
+        continue;
+      }
+      if (_visitStampBuffer[seedIdx] == _visitStamp) continue;
+
+      _bfsHead = 0;
+      _bfsTail = 0;
+      _clearIndicesCount = 0;
+      bool touchesRight = false;
+
+      _visitStampBuffer[seedIdx] = _visitStamp;
+      _bfsQueue[_bfsTail++] = seedIdx;
+      _clearIndicesBuffer[_clearIndicesCount++] = seedIdx;
+
+      while (_bfsHead < _bfsTail) {
+        final currIdx = _bfsQueue[_bfsHead++];
+        final cx = currIdx % cols;
+
+        if (cx == cols - 1) {
+          touchesRight = true;
+        }
+
+        for (final offset in neighbors) {
+          final nextIdx = currIdx + offset;
+          if (nextIdx < 0 || nextIdx >= rows * cols) continue;
+
+          final nx = nextIdx % cols;
+          if ((cx == 0 && (nx == cols - 1)) || (cx == cols - 1 && (nx == 0))) {
+            continue;
+          }
+
+          if (_visitStampBuffer[nextIdx] != _visitStamp &&
+              gridColorBuffer[nextIdx] != 0 &&
+              baseColorIdBuffer[nextIdx] == colorId) {
+            _visitStampBuffer[nextIdx] = _visitStamp;
+            _bfsQueue[_bfsTail++] = nextIdx;
+            _clearIndicesBuffer[_clearIndicesCount++] = nextIdx;
+          }
+        }
       }
 
-      // Explore all 8 neighbors
-      for (final offset in neighbors) {
-        final nextIdx = currIdx + offset;
-        if (nextIdx < 0 || nextIdx >= rows * cols) continue;
-
-        final nx = nextIdx % cols;
-        if ((cx == 0 && (nx == cols - 1)) || (cx == cols - 1 && (nx == 0))) {
-          continue;
+      if (touchesRight) {
+        lastClearedIndices.clear();
+        for (int i = 0; i < _clearIndicesCount; i++) {
+          lastClearedIndices.add(_clearIndicesBuffer[i]);
         }
-
-        if (_visitStampBuffer[nextIdx] != _visitStamp &&
-            gridColorBuffer[nextIdx] != 0 &&
-            baseColorIdBuffer[nextIdx] == colorId) {
-          _visitStampBuffer[nextIdx] = _visitStamp;
-          _bfsQueue[_bfsTail++] = nextIdx;
-          _clearIndicesBuffer[_clearIndicesCount++] = nextIdx;
-        }
+        ScoringService.instance.addSandClearPoints(1, _clearIndicesCount);
+        return true;
       }
     }
 
-    if (!reachesRight) return false;
-
-    // Store cleared indices for animation BEFORE clearing from grid
-    lastClearedIndices.clear();
-    for (int i = 0; i < _clearIndicesCount; i++) {
-      lastClearedIndices.add(_clearIndicesBuffer[i]);
-    }
-
-    // Award points for clearing the bridge
-    ScoringService.instance.addSandClearPoints(1, _clearIndicesCount);
-
-    // Don't clear yet - let the game animate them first, then call finalizeClear
-    return true;
+    return false;
   }
 
   /// Called by the game after clear animation completes to finalize the clearing
