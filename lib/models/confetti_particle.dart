@@ -11,6 +11,8 @@ class ConfettiParticle {
   double rotation;
   double rotationSpeed;
 
+  static final Paint _sharedPaint = Paint()..style = PaintingStyle.fill;
+
   ConfettiParticle({
     required this.position,
     required this.velocity,
@@ -49,9 +51,7 @@ class ConfettiParticle {
   void draw(Canvas canvas) {
     if (alpha <= 0) return;
 
-    final paint = Paint()
-      ..color = color.withAlpha((255 * alpha).toInt())
-      ..style = PaintingStyle.fill;
+    _sharedPaint.color = color.withAlpha((255 * alpha).toInt());
 
     canvas.save();
     canvas.translate(position.dx, position.dy);
@@ -64,7 +64,7 @@ class ConfettiParticle {
         width: size,
         height: size * 1.5,
       ),
-      paint,
+      _sharedPaint,
     );
 
     canvas.restore();
@@ -107,10 +107,17 @@ class ConfettiEmitter {
   }
 
   void update(double dt) {
-    for (final p in particles) {
-      p.update(dt);
+    int writeIndex = 0;
+    for (int i = 0; i < particles.length; i++) {
+      final particle = particles[i];
+      particle.update(dt);
+      if (particle.isAlive) {
+        particles[writeIndex++] = particle;
+      }
     }
-    particles.removeWhere((p) => !p.isAlive);
+    if (writeIndex < particles.length) {
+      particles.length = writeIndex;
+    }
   }
 
   void draw(Canvas canvas) {

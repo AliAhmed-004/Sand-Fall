@@ -104,8 +104,7 @@ class SandGame extends FlameGame with TapCallbacks {
   static const double _clearFlashDuration = 0.05; // 50ms glow flash
   static const double _clearWaveDuration = 0.3; // 300ms wave effect
   double _clearingElapsedTime = 0;
-  final Map<int, double> _clearingCellAnimations =
-      {}; // cell index → wave start time
+  late Float32List _clearingCellAnimations; // cell index -> wave start time
   List<int> _cellsToClears = []; // indices of cells that need to clear
   late Uint8List _clearMask;
 
@@ -116,6 +115,9 @@ class SandGame extends FlameGame with TapCallbacks {
 
   // Floating score popup (single instance, reused)
   FloatingScore? _activeFloatingScore;
+  TextPainter? _floatingScoreTextPainter;
+  int _floatingScorePainterValue = -1;
+  FloatingScoreType? _floatingScorePainterType;
 
   // Screen shake
   double _shakeIntensity = 0;
@@ -129,6 +131,21 @@ class SandGame extends FlameGame with TapCallbacks {
   // Notification badge for milestone celebrations
   NotificationBadge? _activeBadge;
 
+  final Paint _gameOverThresholdPaint = Paint()
+    ..color = Colors.red.withAlpha(204)
+    ..strokeWidth = 3
+    ..style = PaintingStyle.stroke;
+  final Paint _gridBorderPaint = Paint()
+    ..color = Colors.white38
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 4;
+  final Paint _gridInnerBorderPaint = Paint()
+    ..color = Colors.black26
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1;
+
+  bool _needsGameOverEvaluation = false;
+
   @override
   Future<void> onLoad() async {
     pauseEngine();
@@ -139,6 +156,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _vertices = Float32List(cols * rows * 12);
     _colors = Int32List(cols * rows * 6);
     _clearMask = Uint8List(cols * rows);
+    _clearingCellAnimations = Float32List(cols * rows);
 
     // Initialize and layout NEXT TextPainter once
     _nextTextPainter = TextPainter(
@@ -314,6 +332,7 @@ class SandGame extends FlameGame with TapCallbacks {
     if (sandWorld.placeShape(nextShape, gridX, gridY, nextColor)) {
       _generateNextPiece();
       _needsSimulation = true;
+      _needsGameOverEvaluation = true;
       // Show placement immediately instead of waiting for the next fixed step.
       sandWorld.syncGridNow();
       _applyWorldDirtyCellColors();
@@ -326,6 +345,7 @@ class SandGame extends FlameGame with TapCallbacks {
         startPosition: Offset(screenX, screenY),
         type: FloatingScoreType.tap,
       );
+      _invalidateFloatingScorePainter();
 
       // Debounced save: only save every N placements
       _placementsSinceLastSave++;
@@ -385,7 +405,7 @@ class SandGame extends FlameGame with TapCallbacks {
         }
         _cellsToClears.clear();
         _clearingElapsedTime = 0;
-        _clearingCellAnimations.clear();
+        _needsGameOverEvaluation = true;
         _needsSimulation = true;
       }
 
@@ -507,6 +527,7 @@ class SandGame extends FlameGame with TapCallbacks {
           startPosition: Offset(screenX, screenY),
           type: FloatingScoreType.combo,
         );
+        _invalidateFloatingScorePainter();
         _shakeIntensity = 4;
         _shakeElapsed = 0;
       }
@@ -517,13 +538,16 @@ class SandGame extends FlameGame with TapCallbacks {
 
       // Only evaluate game over after all bridge clears have been resolved.
       if (!anyBridgesCleared && _cellsToClears.isEmpty && sandWorld.isStable) {
-        sandWorld.evaluateGameOverCondition();
+        _needsGameOverEvaluation = true;
       }
     }
 
-    // Catch stable frames where no transition happened this update.
-    if (_cellsToClears.isEmpty && sandWorld.isStable && !_needsSimulation) {
+    if (_needsGameOverEvaluation &&
+        _cellsToClears.isEmpty &&
+        sandWorld.isStable &&
+        !_needsSimulation) {
       sandWorld.evaluateGameOverCondition();
+      _needsGameOverEvaluation = false;
     }
 
     if (_hasPendingAutosave && sandWorld.isStable && !_needsSimulation) {
@@ -582,6 +606,12 @@ class SandGame extends FlameGame with TapCallbacks {
         .whenComplete(() {
           _isAutosaveInFlight = false;
         });
+  }
+
+  void _invalidateFloatingScorePainter() {
+    _floatingScoreTextPainter = null;
+    _floatingScorePainterValue = -1;
+    _floatingScorePainterType = null;
   }
 
   // =========================================================
@@ -655,7 +685,6 @@ class SandGame extends FlameGame with TapCallbacks {
 
     _cellsToClears = List.from(cellIndices);
     _clearingElapsedTime = 0;
-    _clearingCellAnimations.clear();
 
     // Pre-calculate when each cell's wave will reach it (based on x position)
     for (final idx in cellIndices) {
@@ -693,8 +722,7 @@ class SandGame extends FlameGame with TapCallbacks {
     }
 
     // Wave fade phase
-    final waveStartTime =
-        _clearingCellAnimations[cellIndex] ?? _clearFlashDuration;
+    final waveStartTime = _clearingCellAnimations[cellIndex];
     final timeSinceWaveStart = _clearingElapsedTime - waveStartTime;
 
     // Cell hasn't been reached by wave yet - keep original color
@@ -745,11 +773,7 @@ class SandGame extends FlameGame with TapCallbacks {
     canvas.drawLine(
       Offset(gridOffset.dx, thresholdY),
       Offset(gridOffset.dx + cols * cellSize, thresholdY),
-      Paint()
-        ..color = Colors.red
-            .withAlpha(204) // 80% opacity red
-        ..strokeWidth = 3
-        ..style = PaintingStyle.stroke,
+      _gameOverThresholdPaint,
     );
   }
 
@@ -802,19 +826,13 @@ class SandGame extends FlameGame with TapCallbacks {
 
     canvas.drawRect(
       borderRect,
-      Paint()
-        ..color = Colors.white38
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
+      _gridBorderPaint,
     );
 
     // Optional: inner shadow effect with a slightly darker line
     canvas.drawRect(
       borderRect.inflate(-2),
-      Paint()
-        ..color = Colors.black26
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
+      _gridInnerBorderPaint,
     );
   }
 
@@ -892,35 +910,49 @@ class SandGame extends FlameGame with TapCallbacks {
     final alpha = fs.alpha;
     final scale = fs.scale;
 
-    // Color: white for tap, gold for combo
-    final color = fs.type == FloatingScoreType.tap
-        ? Colors.white.withAlpha((255 * alpha).toInt())
-        : Colors.amber.withAlpha((255 * alpha).toInt());
-
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: '+${fs.value}',
-        style: TextStyle(
-          color: color,
-          fontSize: fs.fontSize * scale,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              color: Colors.black.withAlpha((128 * alpha).toInt()),
-              blurRadius: 4,
-              offset: const Offset(1, 1),
-            ),
-          ],
+    if (_floatingScoreTextPainter == null ||
+        _floatingScorePainterValue != fs.value ||
+        _floatingScorePainterType != fs.type) {
+      final color = fs.type == FloatingScoreType.tap ? Colors.white : Colors.amber;
+      _floatingScoreTextPainter = TextPainter(
+        text: TextSpan(
+          text: '+${fs.value}',
+          style: TextStyle(
+            color: color,
+            fontSize: fs.fontSize,
+            fontWeight: FontWeight.bold,
+            shadows: const [
+              Shadow(
+                color: Colors.black54,
+                blurRadius: 4,
+                offset: Offset(1, 1),
+              ),
+            ],
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _floatingScorePainterValue = fs.value;
+      _floatingScorePainterType = fs.type;
+    }
 
-    textPainter.paint(
-      canvas,
-      Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2),
+    final tp = _floatingScoreTextPainter!;
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    canvas.scale(scale, scale);
+    final layerRect = Rect.fromLTWH(
+      -tp.width / 2 - 4,
+      -tp.height / 2 - 4,
+      tp.width + 8,
+      tp.height + 8,
     );
+    canvas.saveLayer(
+      layerRect,
+      Paint()..color = Colors.white.withAlpha((255 * alpha).toInt()),
+    );
+    tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
+    canvas.restore();
+    canvas.restore();
   }
 
   /// Resets game state for a new game. Clears the board and resets all game flags.
@@ -937,7 +969,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _hasPendingAutosave = false;
     _isAutosaveInFlight = false;
     _cellsToClears.clear();
-    _clearingCellAnimations.clear();
+    _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
     _clearingElapsedTime = 0;
     _clearMask.fillRange(0, _clearMask.length, 0);
     _colors.fillRange(0, _colors.length, 0);
@@ -946,6 +978,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _needsVertexUpdate = true;
     _cachedVertices = null;
     _activeFloatingScore = null;
+    _invalidateFloatingScorePainter();
     _shakeIntensity = 0;
     _shakeElapsed = 0;
     _shakeOffset = Offset.zero;
@@ -991,11 +1024,13 @@ class SandGame extends FlameGame with TapCallbacks {
       _hasPendingAutosave = false;
       _isAutosaveInFlight = false;
       _cellsToClears.clear();
-      _clearingCellAnimations.clear();
+      _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
       _clearingElapsedTime = 0;
       _clearMask.fillRange(0, _clearMask.length, 0);
       _syncAllCellColorsFromWorld();
       _updateVertexPositions();
+      _needsGameOverEvaluation = true;
+      _invalidateFloatingScorePainter();
     } catch (e) {
       // Silently fail if load is corrupted
     }

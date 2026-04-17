@@ -10,12 +10,53 @@ class NotificationBadge {
   static const duration = 3.0;
   static const riseSpeed = 40.0;
 
+  late final TextPainter _milestonePainter;
+  late final TextPainter _unlockedPainter;
+  late final TextPainter _nextPainter;
+
   NotificationBadge({
     required this.milestone,
     required this.unlockedColor,
     required this.nextMilestoneScore,
     required this.targetPosition,
-  }) : elapsed = 0;
+  }) : elapsed = 0 {
+    _milestonePainter = TextPainter(
+      text: TextSpan(
+        text: 'MILESTONE $milestone',
+        style: const TextStyle(
+          color: Color(0xFFFFD700),
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    _unlockedPainter = TextPainter(
+      text: const TextSpan(
+        text: 'UNLOCKED',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    _nextPainter = TextPainter(
+      text: TextSpan(
+        text: 'Next: ${_formatScore(nextMilestoneScore)} pts',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+  }
 
   Offset get currentPosition {
     return Offset(
@@ -55,10 +96,14 @@ class NotificationBadge {
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
     canvas.scale(s);
+    canvas.saveLayer(
+      const Rect.fromLTWH(-140, -60, 280, 140),
+      Paint()..color = Colors.white.withAlpha((255 * a).toInt()),
+    );
 
     // Badge background
     final bgPaint = Paint()
-      ..color = const Color(0xFF1A1A2E).withAlpha((255 * a * 0.9).toInt());
+      ..color = const Color(0xE61A1A2E);
     final bgRect = RRect.fromRectAndRadius(
       Rect.fromCenter(center: Offset.zero, width: 260, height: 100),
       const Radius.circular(12),
@@ -67,32 +112,19 @@ class NotificationBadge {
 
     // Border
     final borderPaint = Paint()
-      ..color = unlockedColor.withAlpha((255 * a * 0.8).toInt())
+      ..color = unlockedColor.withAlpha(204)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     canvas.drawRRect(bgRect, borderPaint);
 
     // Milestone text
-    final milestonePainter = TextPainter(
-      text: TextSpan(
-        text: 'MILESTONE $milestone',
-        style: TextStyle(
-          color: const Color(0xFFFFD700).withAlpha((255 * a).toInt()),
-          fontSize: 18 * s,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    milestonePainter.layout();
-    milestonePainter.paint(
+    _milestonePainter.paint(
       canvas,
-      Offset(-milestonePainter.width / 2, -35),
+      Offset(-_milestonePainter.width / 2, -35),
     );
 
     // Color swatch
-    final swatchPaint = Paint()..color = unlockedColor.withAlpha((255 * a).toInt());
+    final swatchPaint = Paint()..color = unlockedColor;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: const Offset(-85, 8), width: 24 * s, height: 24 * s),
@@ -106,47 +138,24 @@ class NotificationBadge {
         const Radius.circular(4),
       ),
       Paint()
-        ..color = const Color(0xFFFFFFFF).withAlpha((128 * a).toInt())
+        ..color = const Color(0x80FFFFFF)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
 
     // "UNLOCKED" label
-    final unlockedPainter = TextPainter(
-      text: TextSpan(
-        text: 'UNLOCKED',
-        style: TextStyle(
-          color: Colors.white.withAlpha((255 * a * 0.9).toInt()),
-          fontSize: 10 * s,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 2,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    unlockedPainter.layout();
-    unlockedPainter.paint(
+    _unlockedPainter.paint(
       canvas,
       Offset(-55, 0),
     );
 
     // Next milestone label
-    final nextPainter = TextPainter(
-      text: TextSpan(
-        text: 'Next: ${_formatScore(nextMilestoneScore)} pts',
-        style: TextStyle(
-          color: Colors.white.withAlpha((255 * a * 0.6).toInt()),
-          fontSize: 11 * s,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    nextPainter.layout();
-    nextPainter.paint(
+    _nextPainter.paint(
       canvas,
-      Offset(-nextPainter.width / 2, 30),
+      Offset(-_nextPainter.width / 2, 30),
     );
 
+    canvas.restore();
     canvas.restore();
   }
 

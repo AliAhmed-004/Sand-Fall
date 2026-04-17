@@ -128,7 +128,6 @@ class _HudOverlayState extends State<HudOverlay>
           CurvedAnimation(parent: _progressController, curve: Curves.easeOut),
         );
 
-    _progressController.forward(from: 0);
     setState(() {});
 
     await _progressController.forward(from: 0);
