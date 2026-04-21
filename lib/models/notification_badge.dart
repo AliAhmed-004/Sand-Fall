@@ -90,16 +90,11 @@ class NotificationBadge {
     if (alpha <= 0 || scale <= 0) return;
 
     final pos = currentPosition;
-    final a = alpha;
     final s = scale;
 
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
     canvas.scale(s);
-    canvas.saveLayer(
-      const Rect.fromLTWH(-140, -60, 280, 140),
-      Paint()..color = Colors.white.withAlpha((255 * a).toInt()),
-    );
 
     // Badge background
     final bgPaint = Paint()
@@ -155,7 +150,6 @@ class NotificationBadge {
       Offset(-_nextPainter.width / 2, 30),
     );
 
-    canvas.restore();
     canvas.restore();
   }
 

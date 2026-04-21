@@ -26,7 +26,7 @@ class SandGame extends FlameGame with TapCallbacks {
   static const bool _enableFloatingScores = true;
   static const bool _enableScreenShake = false;
   static const bool _enableConfetti = false;
-  static const bool _enableMilestoneBadge = false;
+  static const bool _enableMilestoneBadge = true;
 
   late SandWorld sandWorld;
 
@@ -563,8 +563,11 @@ class SandGame extends FlameGame with TapCallbacks {
     if (currentMilestone > _previousMilestone && isGameStarted) {
       _previousMilestone = currentMilestone;
 
-      final unlockedColor = SandGame
-          .colors[(currentMilestone - 1).clamp(0, SandGame.colors.length - 1)];
+      final unlockedColorIndex =
+        MilestoneService.instance.getUnlockedColorCount(currentScore, 3) - 1;
+      final unlockedColor = SandGame.colors[
+        unlockedColorIndex.clamp(0, SandGame.colors.length - 1).toInt()
+      ];
 
       if (_enableConfetti) {
         // Emit confetti from progress bar area (top portion of game).
