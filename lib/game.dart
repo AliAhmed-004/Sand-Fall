@@ -23,7 +23,7 @@ import 'package:sandfall/world.dart';
 class SandGame extends FlameGame with TapCallbacks {
   // Temporary performance-first profile: keep mechanics, disable costly visuals.
   static const bool _enableClearAnimation = false;
-  static const bool _enableFloatingScores = false;
+  static const bool _enableFloatingScores = true;
   static const bool _enableScreenShake = false;
   static const bool _enableConfetti = false;
   static const bool _enableMilestoneBadge = false;
@@ -1020,7 +1020,6 @@ class SandGame extends FlameGame with TapCallbacks {
   void _drawFloatingScore(Canvas canvas) {
     final fs = _activeFloatingScore!;
     final pos = fs.currentPosition;
-    final alpha = fs.alpha;
     final scale = fs.scale;
 
     if (_floatingScoreTextPainter == null ||
@@ -1053,18 +1052,10 @@ class SandGame extends FlameGame with TapCallbacks {
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
     canvas.scale(scale, scale);
-    final layerRect = Rect.fromLTWH(
-      -tp.width / 2 - 4,
-      -tp.height / 2 - 4,
-      tp.width + 8,
-      tp.height + 8,
+    tp.paint(
+      canvas,
+      Offset(-tp.width / 2, -tp.height / 2),
     );
-    canvas.saveLayer(
-      layerRect,
-      Paint()..color = Colors.white.withAlpha((255 * alpha).toInt()),
-    );
-    tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
-    canvas.restore();
     canvas.restore();
   }
 
