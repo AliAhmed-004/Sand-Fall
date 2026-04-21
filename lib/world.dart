@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sandfall/services/scoring_service.dart';
 
@@ -90,12 +91,16 @@ class SandWorld {
   late Int32List _clearIndicesBuffer;
   int _clearIndicesCount = 0;
 
+  // Pre-allocated neighbor offsets (computed once per world) to avoid repeated allocations.
+  late List<int> _eightWayNeighbors;
+
   /// Track recently cleared cell indices for animation purposes
   final List<int> lastClearedIndices = [];
 
   // Only process clusters that might move (saves huge CPU when board is mostly settled)
   final List<Cluster> _activeClusters = [];
   bool _activeListDirty = true;
+  final _WorldPerfMeter _perfMeter = _WorldPerfMeter('SandWorld');
 
   SandWorld({required this.cols, required this.rows})
     : gridColorBuffer = Uint32List(cols * rows),
@@ -111,6 +116,16 @@ class SandWorld {
     _visitStampBuffer = Uint32List(cols * rows);
     _bfsQueue = Int32List(cols * rows);
     _clearIndicesBuffer = Int32List(cols * rows);
+    _eightWayNeighbors = [
+      1,
+      -1,
+      cols,
+      -cols,
+      cols + 1,
+      cols - 1,
+      -cols + 1,
+      -cols - 1,
+    ];
     _gameOverThresholdRow = (rows * 0.1).ceil(); // Top 10% of rows
   }
 
@@ -342,12 +357,13 @@ class SandWorld {
   }
 
   void update(double dt) {
-    final didMutateGrid = _applyClusterPhysics();
+    final didMutateGrid = _perfMeter.measure('apply_cluster_physics', _applyClusterPhysics);
     if (didMutateGrid) {
-      _syncGridFromClusters();
+      _perfMeter.measure('sync_grid_from_clusters', _syncGridFromClusters);
     } else {
       _lastDirtyCellCount = 0;
     }
+    _perfMeter.tick();
   }
 
   /// Immediately syncs cluster data into render buffers.
@@ -359,6 +375,7 @@ class SandWorld {
   /// Merges adjacent same-color 1-cell clusters to reduce fragmentation.
   /// Call this after the board stabilizes (isStable == true).
   void mergeAdjacentClusters() {
+    final mergeSw = _perfMeter.start();
     if (!_isStable || clusters.isEmpty) return;
 
     bool mergedAny = false;
@@ -436,6 +453,7 @@ class SandWorld {
       _cachedClusterList = clusters.values.toList(growable: false);
       _lastKnownClusterCount = clusters.length;
     }
+    _perfMeter.end('merge_adjacent_clusters', mergeSw);
   }
 
   bool isInside(int x, int y) {
@@ -617,9 +635,12 @@ class SandWorld {
     // This is much more efficient than clearing the entire 8000-cell buffer every frame
     for (int i = 0; i < _previousFrameCellCount; i++) {
       final cellIndex = _previousFrameCellIndices[i];
-      gridColorBuffer[cellIndex] = 0;
-      baseColorIdBuffer[cellIndex] = 0;
-      _lastDirtyCellIndices[_lastDirtyCellCount++] = cellIndex;
+      // Only clear if cell is actually occupied to avoid unnecessary writes
+      if (gridColorBuffer[cellIndex] != 0 || baseColorIdBuffer[cellIndex] != 0) {
+        gridColorBuffer[cellIndex] = 0;
+        baseColorIdBuffer[cellIndex] = 0;
+        _lastDirtyCellIndices[_lastDirtyCellCount++] = cellIndex;
+      }
     }
 
     // Collect current frame cell indices and edge colors for bridge detection optimization
@@ -633,10 +654,15 @@ class SandWorld {
         if (isInside(cell.x, cell.y)) {
           final cellIndex = cell.y * cols + cell.x;
           final colorVal = cell.color.toARGB32();
-          gridColorBuffer[cellIndex] = colorVal;
-          baseColorIdBuffer[cellIndex] = cell.baseColorId;
-          _currentFrameCellIndices[_currentFrameCellCount++] = cellIndex;
-          _lastDirtyCellIndices[_lastDirtyCellCount++] = cellIndex;
+
+          // Only update if values actually changed to avoid unnecessary writes
+          if (gridColorBuffer[cellIndex] != colorVal ||
+              baseColorIdBuffer[cellIndex] != cell.baseColorId) {
+            gridColorBuffer[cellIndex] = colorVal;
+            baseColorIdBuffer[cellIndex] = cell.baseColorId;
+            _currentFrameCellIndices[_currentFrameCellCount++] = cellIndex;
+            _lastDirtyCellIndices[_lastDirtyCellCount++] = cellIndex;
+          }
 
           // Track which color IDs touch the edges for bridge detection optimization
           if (cell.x == 0) {
@@ -663,6 +689,13 @@ class SandWorld {
     final colorId = _getColorId(color);
     if (colorId == -1) return false; // Color not found
 
+    // Quick reject: use cached edge color info instead of scanning edges
+    // This saves O(rows * 2) operations per color check
+    if (!_leftEdgeColors.contains(colorId) ||
+        !_rightEdgeColors.contains(colorId)) {
+      return false;
+    }
+
     bool touchesLeft = false;
     bool touchesRight = false;
     for (int y = 0; y < rows; y++) {
@@ -680,31 +713,29 @@ class SandWorld {
     }
     if (!touchesLeft || !touchesRight) return false;
 
-    final visited = Uint8List(rows * cols);
-    final queue = <int>[];
+    // Reuse pre-allocated buffers to avoid memory allocations
+    _visitStamp++;
+    if (_visitStamp == 0) {
+      _visitStamp = 1;
+      _visitStampBuffer.fillRange(0, _visitStampBuffer.length, 0);
+    }
+
+    _bfsHead = 0;
+    _bfsTail = 0;
 
     for (int y = 0; y < rows; y++) {
       final idx = y * cols;
       if (gridColorBuffer[idx] != 0 && baseColorIdBuffer[idx] == colorId) {
-        visited[idx] = 1;
-        queue.add(idx);
+        _visitStampBuffer[idx] = _visitStamp;
+        _bfsQueue[_bfsTail++] = idx;
       }
     }
 
-    final neighbors = [
-      1,
-      -1,
-      cols,
-      -cols,
-      cols + 1,
-      cols - 1,
-      -cols + 1,
-      -cols - 1,
-    ];
+    // Use pre-allocated neighbor array to avoid recreation
+    final neighbors = _eightWayNeighbors;
 
-    int head = 0;
-    while (head < queue.length) {
-      final currIdx = queue[head++];
+    while (_bfsHead < _bfsTail) {
+      final currIdx = _bfsQueue[_bfsHead++];
       final cx = currIdx % cols;
 
       if (cx == cols - 1) {
@@ -720,11 +751,11 @@ class SandWorld {
           continue;
         }
 
-        if (visited[nextIdx] == 0 &&
+        if (_visitStampBuffer[nextIdx] != _visitStamp &&
             gridColorBuffer[nextIdx] != 0 &&
             baseColorIdBuffer[nextIdx] == colorId) {
-          visited[nextIdx] = 1;
-          queue.add(nextIdx);
+          _visitStampBuffer[nextIdx] = _visitStamp;
+          _bfsQueue[_bfsTail++] = nextIdx;
         }
       }
     }
@@ -733,6 +764,7 @@ class SandWorld {
   }
 
   bool clearSpanningBridge(Color color) {
+    final clearSw = _perfMeter.start();
     if (!_isStable) return false;
 
     final colorId = _getColorId(color);
@@ -742,6 +774,7 @@ class SandWorld {
     // This saves O(rows * 2) operations per color check
     if (!_leftEdgeColors.contains(colorId) ||
         !_rightEdgeColors.contains(colorId)) {
+      _perfMeter.end('clear_spanning_bridge', clearSw);
       return false;
     }
 
@@ -752,21 +785,15 @@ class SandWorld {
       _visitStamp = 1;
       _visitStampBuffer.fillRange(0, _visitStampBuffer.length, 0);
     }
+
+    // Reset buffer indices
     _bfsHead = 0;
     _bfsTail = 0;
     _clearIndicesCount = 0;
 
+    // Pre-allocate neighbor array as class member to avoid repeated allocations
     // 8-directional neighbors to ensure we clear diagonally connected bridges as well
-    final neighbors = [
-      1,
-      -1,
-      cols,
-      -cols,
-      cols + 1,
-      cols - 1,
-      -cols + 1,
-      -cols - 1,
-    ];
+    final neighbors = _eightWayNeighbors;
 
     // Evaluate one connected component at a time from left-edge seeds.
     // Only clear the component that actually reaches the right edge.
@@ -777,6 +804,7 @@ class SandWorld {
       }
       if (_visitStampBuffer[seedIdx] == _visitStamp) continue;
 
+      // Reset counters for this component
       _bfsHead = 0;
       _bfsTail = 0;
       _clearIndicesCount = 0;
@@ -799,9 +827,9 @@ class SandWorld {
           if (nextIdx < 0 || nextIdx >= rows * cols) continue;
 
           final nx = nextIdx % cols;
-          if ((cx == 0 && (nx == cols - 1)) || (cx == cols - 1 && (nx == 0))) {
-            continue;
-          }
+          // Simplified wraparound check for better performance
+          if (nx == 0 && cx == cols - 1) continue;
+          if (nx == cols - 1 && cx == 0) continue;
 
           if (_visitStampBuffer[nextIdx] != _visitStamp &&
               gridColorBuffer[nextIdx] != 0 &&
@@ -819,31 +847,42 @@ class SandWorld {
           lastClearedIndices.add(_clearIndicesBuffer[i]);
         }
         ScoringService.instance.addSandClearPoints(1, _clearIndicesCount);
+        _perfMeter.end('clear_spanning_bridge', clearSw);
         return true;
       }
     }
 
+    _perfMeter.end('clear_spanning_bridge', clearSw);
     return false;
   }
 
   /// Called by the game after clear animation completes to finalize the clearing
   void finalizeClear(List<int> indices) {
+    final cleanupSw = _perfMeter.start();
+    final affectedClusterIds = <int>{};
+
     for (final idx in indices) {
+      final clusterId = cellIdMap[idx];
+      if (clusterId != 0) {
+        affectedClusterIds.add(clusterId);
+      }
       gridColorBuffer[idx] = 0;
       baseColorIdBuffer[idx] = 0;
       cellIdMap[idx] = 0;
     }
 
-    _cleanupStaleClusters();
+    _cleanupStaleClusters(affectedClusterIds);
+    _perfMeter.end('finalize_clear_cleanup', cleanupSw);
   }
 
   /// After clearing cells directly in the grid, some clusters may have lost all their cells or become invalid.
   /// This method scans through existing clusters and removes any that no longer have valid cells in the grid.
-  void _cleanupStaleClusters() {
+  void _cleanupStaleClusters([Set<int>? candidateClusterIds]) {
+    final idsToCheck = candidateClusterIds ?? clusters.keys.toSet();
     final idsToRemove = <int>[];
-    for (final entry in clusters.entries) {
-      final clusterId = entry.key;
-      final cluster = entry.value;
+    for (final clusterId in idsToCheck) {
+      final cluster = clusters[clusterId];
+      if (cluster == null) continue;
 
       cluster.cells.removeWhere((cell) {
         if (!isInside(cell.x, cell.y)) return true;
@@ -935,5 +974,71 @@ class SandWorld {
 
       world._createCluster(cells);
     }
+  }
+}
+
+class _WorldPerfMeter {
+  static const bool _enabled = kDebugMode || kProfileMode;
+
+  final String name;
+  final Map<String, int> _totalsUs = <String, int>{};
+  final Map<String, int> _maxUs = <String, int>{};
+  final Map<String, int> _counts = <String, int>{};
+  int _ticks = 0;
+
+  _WorldPerfMeter(this.name);
+
+  Stopwatch? start() {
+    if (!_enabled) return null;
+    return Stopwatch()..start();
+  }
+
+  void end(String section, Stopwatch? stopwatch) {
+    if (!_enabled || stopwatch == null) return;
+    stopwatch.stop();
+    _record(section, stopwatch.elapsedMicroseconds);
+  }
+
+  T measure<T>(String section, T Function() work) {
+    if (!_enabled) return work();
+    final sw = Stopwatch()..start();
+    final result = work();
+    sw.stop();
+    _record(section, sw.elapsedMicroseconds);
+    return result;
+  }
+
+  void tick() {
+    if (!_enabled) return;
+    _ticks++;
+    if (_ticks >= 240) {
+      _flush();
+    }
+  }
+
+  void _record(String section, int elapsedUs) {
+    _totalsUs[section] = (_totalsUs[section] ?? 0) + elapsedUs;
+    _counts[section] = (_counts[section] ?? 0) + 1;
+    final previousMax = _maxUs[section] ?? 0;
+    if (elapsedUs > previousMax) {
+      _maxUs[section] = elapsedUs;
+    }
+  }
+
+  void _flush() {
+    final sections = _totalsUs.keys.toList(growable: false)..sort();
+    final metrics = <String>[];
+    for (final section in sections) {
+      final count = _counts[section] ?? 1;
+      final avgMs = (_totalsUs[section]! / count) / 1000.0;
+      final maxMs = (_maxUs[section]! / 1000.0);
+      metrics.add('$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms');
+    }
+
+    debugPrint('[$name perf] ${metrics.join(' | ')}');
+    _totalsUs.clear();
+    _maxUs.clear();
+    _counts.clear();
+    _ticks = 0;
   }
 }

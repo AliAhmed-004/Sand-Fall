@@ -1,11 +1,11 @@
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui';
 import 'dart:ui' as ui;
 
 import 'package:flame/events.dart';
 import 'package:flame/extensions.dart';
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/models/confetti_particle.dart';
@@ -21,6 +21,13 @@ import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/world.dart';
 
 class SandGame extends FlameGame with TapCallbacks {
+  // Temporary performance-first profile: keep mechanics, disable costly visuals.
+  static const bool _enableClearAnimation = false;
+  static const bool _enableFloatingScores = false;
+  static const bool _enableScreenShake = false;
+  static const bool _enableConfetti = false;
+  static const bool _enableMilestoneBadge = false;
+
   late SandWorld sandWorld;
 
   final double topUIRatio = 0.2;
@@ -55,10 +62,13 @@ class SandGame extends FlameGame with TapCallbacks {
   static const double _step = 1 / 60;
   static const double _maxFrameDt = 0.05;
   static const int _maxSubStepsPerFrame = 2;
+  static const double _targetFrameMs = 16.67;
 
   // Track stability to trigger bridge checks only when the board transitions from unstable to stable
   bool _wasStableLastFrame = true;
   bool _needsSimulation = false;
+  double _avgFrameMs = _targetFrameMs;
+  int _consecutiveSlowFrames = 0;
 
   // Debounced save frequency: save game state only after every N successful placements
   static const int _saveInterval = 5;
@@ -83,12 +93,6 @@ class SandGame extends FlameGame with TapCallbacks {
   // Performance optimization: cached NEXT TextPainter
   late TextPainter _nextTextPainter;
 
-  // Performance optimization: cached grid lines as Picture
-  late ui.Picture _gridLinesPicture;
-  double _lastGridLinesOffsetX = -1;
-  double _lastGridLinesOffsetY = -1;
-  double _lastGridLinesScale = -1;
-
   // Performance optimization: cached background as Picture
   ui.Picture? _backgroundPicture;
   double _lastBackgroundWidth = -1;
@@ -103,10 +107,16 @@ class SandGame extends FlameGame with TapCallbacks {
   // Clearing animation tracking
   static const double _clearFlashDuration = 0.05; // 50ms glow flash
   static const double _clearWaveDuration = 0.3; // 300ms wave effect
+  static const double _invClearWaveDuration = 1.0 / _clearWaveDuration;
+  static const int _unsetAnimatedColor = -1;
   double _clearingElapsedTime = 0;
   late Float32List _clearingCellAnimations; // cell index -> wave start time
   List<int> _cellsToClears = []; // indices of cells that need to clear
   late Uint8List _clearMask;
+  late Int32List _lastAnimatedCellColors;
+  late Int32List _pendingColorIndices;
+  late Int32List _pendingColorValues;
+  int _pendingColorCount = 0;
 
   // Cached Vertices for massive render speedup
   Vertices? _cachedVertices;
@@ -131,20 +141,16 @@ class SandGame extends FlameGame with TapCallbacks {
   // Notification badge for milestone celebrations
   NotificationBadge? _activeBadge;
 
+  final Paint _playAreaBorderPaint = Paint()
+    ..color = Colors.white24
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2;
   final Paint _gameOverThresholdPaint = Paint()
     ..color = Colors.red.withAlpha(204)
     ..strokeWidth = 3
     ..style = PaintingStyle.stroke;
-  final Paint _gridBorderPaint = Paint()
-    ..color = Colors.white38
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 4;
-  final Paint _gridInnerBorderPaint = Paint()
-    ..color = Colors.black26
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1;
-
   bool _needsGameOverEvaluation = false;
+  final _PerfMeter _perfMeter = _PerfMeter('SandGame');
 
   @override
   Future<void> onLoad() async {
@@ -157,6 +163,14 @@ class SandGame extends FlameGame with TapCallbacks {
     _colors = Int32List(cols * rows * 6);
     _clearMask = Uint8List(cols * rows);
     _clearingCellAnimations = Float32List(cols * rows);
+    _lastAnimatedCellColors = Int32List(cols * rows);
+    _lastAnimatedCellColors.fillRange(
+      0,
+      _lastAnimatedCellColors.length,
+      _unsetAnimatedColor,
+    );
+    _pendingColorIndices = Int32List(cols * rows);
+    _pendingColorValues = Int32List(cols * rows);
 
     // Initialize and layout NEXT TextPainter once
     _nextTextPainter = TextPainter(
@@ -243,10 +257,6 @@ class SandGame extends FlameGame with TapCallbacks {
       _lastBackgroundWidth = -1;
       _lastBackgroundHeight = -1;
       _backgroundPicture = null;
-      // Invalidate cached grid lines picture when size changes
-      _lastGridLinesOffsetX = -1;
-      _lastGridLinesOffsetY = -1;
-      _lastGridLinesScale = -1;
       _needsVertexUpdate = true;
       _cachedVertices = null;
     }
@@ -287,11 +297,72 @@ class SandGame extends FlameGame with TapCallbacks {
     if (cellIndex < 0 || cellIndex >= cols * rows) return;
 
     final colorBase = cellIndex * 6;
-    for (int j = 0; j < 6; j++) {
-      _colors[colorBase + j] = color;
+
+    // Only update if color actually changed to avoid unnecessary vertex rebuilds
+    if (_colors[colorBase] != color) {
+      // Direct assignment instead of loop for better performance
+      _colors[colorBase] = color;
+      _colors[colorBase + 1] = color;
+      _colors[colorBase + 2] = color;
+      _colors[colorBase + 3] = color;
+      _colors[colorBase + 4] = color;
+      _colors[colorBase + 5] = color;
+      _needsVertexUpdate = true;
+    }
+  }
+
+  /// Sets colors for multiple cells at once to reduce vertex update overhead
+  void _setMultipleCellColorsInVertexBuffer(List<int> cellIndices, int color) {
+    bool needsUpdate = false;
+
+    for (final cellIndex in cellIndices) {
+      if (cellIndex < 0 || cellIndex >= cols * rows) continue;
+
+      final colorBase = cellIndex * 6;
+
+      // Only update if color actually changed
+      if (_colors[colorBase] != color) {
+        for (int j = 0; j < 6; j++) {
+          _colors[colorBase + j] = color;
+        }
+        needsUpdate = true;
+      }
     }
 
-    _needsVertexUpdate = true;
+    if (needsUpdate) {
+      _needsVertexUpdate = true;
+    }
+  }
+
+  /// Applies a per-cell color list in one pass and flips the vertex dirty flag once.
+  void _setMultipleCellColorsWithValuesInVertexBuffer(
+    Int32List cellIndices,
+    Int32List colors,
+    int count,
+  ) {
+    bool needsUpdate = false;
+
+    for (int i = 0; i < count; i++) {
+      final cellIndex = cellIndices[i];
+      if (cellIndex < 0 || cellIndex >= cols * rows) continue;
+
+      final color = colors[i];
+      final colorBase = cellIndex * 6;
+
+      if (_colors[colorBase] != color) {
+        _colors[colorBase] = color;
+        _colors[colorBase + 1] = color;
+        _colors[colorBase + 2] = color;
+        _colors[colorBase + 3] = color;
+        _colors[colorBase + 4] = color;
+        _colors[colorBase + 5] = color;
+        needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      _needsVertexUpdate = true;
+    }
   }
 
   void _applyWorldDirtyCellColors() {
@@ -337,15 +408,17 @@ class SandGame extends FlameGame with TapCallbacks {
       sandWorld.syncGridNow();
       _applyWorldDirtyCellColors();
 
-      // Show floating score popup at tap position
-      final screenX = gridOffset.dx + gridX * cellSize + cellSize / 2;
-      final screenY = gridOffset.dy + gridY * cellSize;
-      _activeFloatingScore = FloatingScore(
-        value: ScoringService.instance.blockPlacementPoints,
-        startPosition: Offset(screenX, screenY),
-        type: FloatingScoreType.tap,
-      );
-      _invalidateFloatingScorePainter();
+      if (_enableFloatingScores) {
+        // Show floating score popup at tap position.
+        final screenX = gridOffset.dx + gridX * cellSize + cellSize / 2;
+        final screenY = gridOffset.dy + gridY * cellSize;
+        _activeFloatingScore = FloatingScore(
+          value: ScoringService.instance.blockPlacementPoints,
+          startPosition: Offset(screenX, screenY),
+          type: FloatingScoreType.tap,
+        );
+        _invalidateFloatingScorePainter();
+      }
 
       // Debounced save: only save every N placements
       _placementsSinceLastSave++;
@@ -388,6 +461,15 @@ class SandGame extends FlameGame with TapCallbacks {
 
   @override
   void update(double dt) {
+    final updateFrameSw = _perfMeter.startFrame();
+    final frameMs = dt * 1000.0;
+    _avgFrameMs = (_avgFrameMs * 0.9) + (frameMs * 0.1);
+    if (frameMs > _targetFrameMs) {
+      _consecutiveSlowFrames++;
+    } else {
+      _consecutiveSlowFrames = 0;
+    }
+
     super.update(dt);
 
     // Update clearing animation if in progress
@@ -397,11 +479,15 @@ class SandGame extends FlameGame with TapCallbacks {
       // After animation completes, finalize the clearing
       if (_clearingElapsedTime >= _clearFlashDuration + _clearWaveDuration) {
         sandWorld.finalizeClear(_cellsToClears);
+
+        _setMultipleCellColorsInVertexBuffer(_cellsToClears, 0);
         for (final idx in _cellsToClears) {
           if (idx >= 0 && idx < _clearMask.length) {
             _clearMask[idx] = 0;
           }
-          _setCellColorInVertexBuffer(idx, 0);
+          if (idx >= 0 && idx < _lastAnimatedCellColors.length) {
+            _lastAnimatedCellColors[idx] = _unsetAnimatedColor;
+          }
         }
         _cellsToClears.clear();
         _clearingElapsedTime = 0;
@@ -411,6 +497,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
       // Skip physics during clearing animation
       _wasStableLastFrame = sandWorld.isStable;
+      _perfMeter.endFrame(updateFrameSw, 'update_total');
       return;
     }
 
@@ -433,6 +520,7 @@ class SandGame extends FlameGame with TapCallbacks {
         // Show game over overlay
         overlays.add(GameConfig.gameOverOverlay);
       }
+      _perfMeter.endFrame(updateFrameSw, 'update_total');
       return;
     }
 
@@ -441,15 +529,22 @@ class SandGame extends FlameGame with TapCallbacks {
       final frameDt = dt > _maxFrameDt ? _maxFrameDt : dt;
       _accumulator += frameDt;
 
+      // Adaptive sub-step throttling: when recent frames are slow, cap at 1 step
+      // to avoid long red-frame bursts from compounding CPU work.
+      final adaptiveMaxSubSteps =
+          (_consecutiveSlowFrames >= 2 || _avgFrameMs > 18.0)
+          ? 1
+          : _maxSubStepsPerFrame;
+
       int subSteps = 0;
-      while (_accumulator >= _step && subSteps < _maxSubStepsPerFrame) {
-        sandWorld.update(_step);
-        _applyWorldDirtyCellColors();
+      while (_accumulator >= _step && subSteps < adaptiveMaxSubSteps) {
+        _perfMeter.measure('world_update', () => sandWorld.update(_step));
+        _perfMeter.measure('apply_dirty_colors', _applyWorldDirtyCellColors);
         _accumulator -= _step;
         subSteps++;
       }
 
-      if (subSteps == _maxSubStepsPerFrame) {
+      if (subSteps == adaptiveMaxSubSteps) {
         _accumulator = 0;
       }
 
@@ -468,35 +563,39 @@ class SandGame extends FlameGame with TapCallbacks {
     if (currentMilestone > _previousMilestone && isGameStarted) {
       _previousMilestone = currentMilestone;
 
-      // Emit confetti from progress bar area (top portion of game)
-      final progressBarY = size.y * topUIRatio / 2;
-      final progressBarCenter = Offset(size.x / 2, progressBarY);
       final unlockedColor = SandGame
           .colors[(currentMilestone - 1).clamp(0, SandGame.colors.length - 1)];
 
-      _confettiEmitter.emit(
-        origin: progressBarCenter,
-        baseColor: unlockedColor,
-        count: 30,
-        spread: 250,
-        upwardVelocity: -300,
-      );
+      if (_enableConfetti) {
+        // Emit confetti from progress bar area (top portion of game).
+        final progressBarY = size.y * topUIRatio / 2;
+        final progressBarCenter = Offset(size.x / 2, progressBarY);
+        _confettiEmitter.emit(
+          origin: progressBarCenter,
+          baseColor: unlockedColor,
+          count: 30,
+          spread: 250,
+          upwardVelocity: -300,
+        );
+      }
 
-      // Show notification badge between HUD and grid
-      final badgeY = size.y * topUIRatio + 30;
-      _activeBadge = NotificationBadge(
-        milestone: currentMilestone,
-        unlockedColor: unlockedColor,
-        nextMilestoneScore: MilestoneService.instance.getNextMilestoneScore(
-          currentScore,
-        ),
-        targetPosition: Offset(size.x / 2, badgeY),
-      );
+      if (_enableMilestoneBadge) {
+        // Show notification badge between HUD and grid.
+        final badgeY = size.y * topUIRatio + 30;
+        _activeBadge = NotificationBadge(
+          milestone: currentMilestone,
+          unlockedColor: unlockedColor,
+          nextMilestoneScore: MilestoneService.instance.getNextMilestoneScore(
+            currentScore,
+          ),
+          targetPosition: Offset(size.x / 2, badgeY),
+        );
+      }
     }
 
     if (sandWorld.isStable && !_wasStableLastFrame) {
       // Merge adjacent same-color clusters to reduce fragmentation
-      sandWorld.mergeAdjacentClusters();
+      _perfMeter.measure('merge_adjacent_clusters', sandWorld.mergeAdjacentClusters);
 
       // Start a clear session to track combo bonuses
       ScoringService.instance.startClearSession();
@@ -508,28 +607,42 @@ class SandGame extends FlameGame with TapCallbacks {
 
       bool anyBridgesCleared = false;
       final indicesToClear = <int>{};
-      for (final c in availableColors) {
-        if (sandWorld.clearSpanningBridge(c)) {
-          anyBridgesCleared = true;
-          indicesToClear.addAll(sandWorld.lastClearedIndices);
+      _perfMeter.measure('bridge_detection_and_clear', () {
+        for (final c in availableColors) {
+          if (sandWorld.clearSpanningBridge(c)) {
+            anyBridgesCleared = true;
+            indicesToClear.addAll(sandWorld.lastClearedIndices);
+          }
         }
-      }
+      });
 
       // Start one clear animation for all cleared bridges.
       if (indicesToClear.isNotEmpty) {
-        _startClearingAnimation(indicesToClear.toList());
+        final clearList = indicesToClear.toList(growable: false);
+        if (_enableClearAnimation) {
+          _startClearingAnimation(clearList);
+        } else {
+          _perfMeter.measure('finalize_clear', () => sandWorld.finalizeClear(clearList));
+          _setMultipleCellColorsInVertexBuffer(clearList, 0);
+          _needsSimulation = true;
+          _needsGameOverEvaluation = true;
+        }
 
-        // Show combo floating score and trigger screen shake
-        final screenX = gridOffset.dx + (cols * cellSize) / 2;
-        final screenY = gridOffset.dy + (rows * cellSize) / 3;
-        _activeFloatingScore = FloatingScore(
-          value: ScoringService.instance.lastClearPoints,
-          startPosition: Offset(screenX, screenY),
-          type: FloatingScoreType.combo,
-        );
-        _invalidateFloatingScorePainter();
-        _shakeIntensity = 4;
-        _shakeElapsed = 0;
+        if (_enableFloatingScores) {
+          final screenX = gridOffset.dx + (cols * cellSize) / 2;
+          final screenY = gridOffset.dy + (rows * cellSize) / 3;
+          _activeFloatingScore = FloatingScore(
+            value: ScoringService.instance.lastClearPoints,
+            startPosition: Offset(screenX, screenY),
+            type: FloatingScoreType.combo,
+          );
+          _invalidateFloatingScorePainter();
+        }
+
+        if (_enableScreenShake) {
+          _shakeIntensity = 4;
+          _shakeElapsed = 0;
+        }
       }
 
       // Only end combo if no bridges were found
@@ -555,15 +668,17 @@ class SandGame extends FlameGame with TapCallbacks {
     }
 
     // Update floating score popup
-    if (_activeFloatingScore != null) {
+    if (_enableFloatingScores && _activeFloatingScore != null) {
       _activeFloatingScore!.update(dt);
       if (_activeFloatingScore!.isExpired) {
         _activeFloatingScore = null;
       }
+    } else if (!_enableFloatingScores) {
+      _activeFloatingScore = null;
     }
 
     // Update screen shake
-    if (_shakeIntensity > 0) {
+    if (_enableScreenShake && _shakeIntensity > 0) {
       _shakeElapsed += dt;
       if (_shakeElapsed >= _shakeDuration) {
         _shakeIntensity = 0;
@@ -577,20 +692,29 @@ class SandGame extends FlameGame with TapCallbacks {
           (_random.nextDouble() * 2 - 1) * currentIntensity,
         );
       }
+    } else if (!_enableScreenShake) {
+      _shakeIntensity = 0;
+      _shakeElapsed = 0;
+      _shakeOffset = Offset.zero;
     }
 
     // Update confetti particles
-    _confettiEmitter.update(dt);
+    if (_enableConfetti) {
+      _confettiEmitter.update(dt);
+    }
 
     // Update notification badge
-    if (_activeBadge != null) {
+    if (_enableMilestoneBadge && _activeBadge != null) {
       _activeBadge!.update(dt);
       if (_activeBadge!.isExpired) {
         _activeBadge = null;
       }
+    } else if (!_enableMilestoneBadge) {
+      _activeBadge = null;
     }
 
     _wasStableLastFrame = sandWorld.isStable;
+    _perfMeter.endFrame(updateFrameSw, 'update_total');
   }
 
   void _triggerAutosave() {
@@ -599,7 +723,10 @@ class SandGame extends FlameGame with TapCallbacks {
     _isAutosaveInFlight = true;
     _hasPendingAutosave = false;
 
-    final sparseState = SparseGameStateDTO.fromWorld(sandWorld);
+    final sparseState = _perfMeter.measure(
+      'autosave_snapshot_encode',
+      () => SparseGameStateDTO.fromWorld(sandWorld),
+    );
 
     SaveGameService.instance
         .saveGame(sparseState, ScoringService.instance.currentScore)
@@ -620,60 +747,64 @@ class SandGame extends FlameGame with TapCallbacks {
 
   @override
   void render(Canvas canvas) {
+    final renderFrameSw = _perfMeter.startFrame();
     super.render(canvas);
 
     // Apply screen shake
     canvas.save();
-    canvas.translate(_shakeOffset.dx, _shakeOffset.dy);
+    if (_enableScreenShake) {
+      canvas.translate(_shakeOffset.dx, _shakeOffset.dy);
+    }
 
     _drawBackground(canvas);
 
     // Animate only currently clearing cells
-    if (_cellsToClears.isNotEmpty) {
-      final gridColorBuffer = sandWorld.gridColorBuffer;
-      for (final cellIndex in _cellsToClears) {
-        final animatedColor = _getAnimatedCellColor(
-          cellIndex,
-          gridColorBuffer[cellIndex],
-        );
-        _setCellColorInVertexBuffer(cellIndex, animatedColor);
-      }
-      // _needsVertexUpdate is already set by _setCellColorInVertexBuffer
+    if (_enableClearAnimation && _cellsToClears.isNotEmpty) {
+      _updateClearingAnimationVertexColors();
     }
 
     // ←←← THIS IS THE KEY OPTIMIZATION ←←←
     if (_needsVertexUpdate || _cachedVertices == null) {
-      _cachedVertices = Vertices.raw(
-        VertexMode.triangles,
-        _vertices,
-        colors: _colors,
+      _cachedVertices = _perfMeter.measure(
+        'vertices_rebuild',
+        () => Vertices.raw(
+          VertexMode.triangles,
+          _vertices,
+          colors: _colors,
+        ),
       );
       _needsVertexUpdate = false;
     }
 
-    canvas.drawVertices(_cachedVertices!, BlendMode.src, _verticesPaint);
+    _perfMeter.measure(
+      'draw_vertices',
+      () => canvas.drawVertices(_cachedVertices!, BlendMode.src, _verticesPaint),
+    );
 
-    // Canvas is cleared every frame, so cached static elements must still be
-    // drawn every frame even if their picture generation is memoized.
-    _drawGridLines(canvas);
+    _drawPlayAreaBorder(canvas);
+
     _drawGameOverThreshold(canvas);
 
     _drawNextPiecePreview(canvas);
 
     // Draw floating score popup
-    if (_activeFloatingScore != null) {
+    if (_enableFloatingScores && _activeFloatingScore != null) {
       _drawFloatingScore(canvas);
     }
 
     canvas.restore();
 
     // Draw confetti (outside shake transform)
-    _confettiEmitter.draw(canvas);
+    if (_enableConfetti) {
+      _confettiEmitter.draw(canvas);
+    }
 
     // Draw notification badge (outside shake transform)
-    if (_activeBadge != null) {
+    if (_enableMilestoneBadge && _activeBadge != null) {
       _activeBadge!.draw(canvas);
     }
+
+    _perfMeter.endFrame(renderFrameSw, 'render_total');
   }
 
   void _startClearingAnimation(List<int> cellIndices) {
@@ -694,51 +825,86 @@ class SandGame extends FlameGame with TapCallbacks {
       final waveStartTime =
           _clearFlashDuration + (cellDelayFraction * _clearWaveDuration);
       _clearingCellAnimations[idx] = waveStartTime;
+      _lastAnimatedCellColors[idx] = _unsetAnimatedColor;
       if (idx >= 0 && idx < _clearMask.length) {
         _clearMask[idx] = 1;
       }
     }
   }
 
-  int _getAnimatedCellColor(int cellIndex, int originalColor) {
-    // Extract ARGB components
+  void _updateClearingAnimationVertexColors() {
+    final gridColorBuffer = sandWorld.gridColorBuffer;
+    _pendingColorCount = 0;
+
+    if (_clearingElapsedTime < _clearFlashDuration) {
+      // Flash multiplier is frame-global; compute once and reuse for all cells.
+      final flashProgress = _clearingElapsedTime / _clearFlashDuration;
+      final brightnessMultiplier = 1.0 + (0.4 * flashProgress);
+
+      for (final cellIndex in _cellsToClears) {
+        final originalColor = gridColorBuffer[cellIndex];
+        final animatedColor = _applyFlashColor(originalColor, brightnessMultiplier);
+        _queueAnimatedColorIfChanged(cellIndex, animatedColor);
+      }
+    } else {
+      for (final cellIndex in _cellsToClears) {
+        final originalColor = gridColorBuffer[cellIndex];
+        final waveStartTime = _clearingCellAnimations[cellIndex];
+        final timeSinceWaveStart = _clearingElapsedTime - waveStartTime;
+        final animatedColor = _applyWaveFadeColor(originalColor, timeSinceWaveStart);
+        _queueAnimatedColorIfChanged(cellIndex, animatedColor);
+      }
+    }
+
+    if (_pendingColorCount > 0) {
+      _setMultipleCellColorsWithValuesInVertexBuffer(
+        _pendingColorIndices,
+        _pendingColorValues,
+        _pendingColorCount,
+      );
+    }
+  }
+
+  void _queueAnimatedColorIfChanged(int cellIndex, int animatedColor) {
+    if (_lastAnimatedCellColors[cellIndex] == animatedColor) {
+      return;
+    }
+
+    _lastAnimatedCellColors[cellIndex] = animatedColor;
+    _pendingColorIndices[_pendingColorCount] = cellIndex;
+    _pendingColorValues[_pendingColorCount] = animatedColor;
+    _pendingColorCount++;
+  }
+
+  int _applyFlashColor(int originalColor, double brightnessMultiplier) {
     final alpha = (originalColor >> 24) & 0xFF;
     final red = (originalColor >> 16) & 0xFF;
     final green = (originalColor >> 8) & 0xFF;
     final blue = originalColor & 0xFF;
 
-    // Glow flash phase (0 to _clearFlashDuration)
-    if (_clearingElapsedTime < _clearFlashDuration) {
-      // Brighten all cells during flash
-      final flashProgress = _clearingElapsedTime / _clearFlashDuration;
-      final brightnessFactor =
-          1.0 + (0.4 * flashProgress); // Brighten by up to 40%
+    final newRed = (red * brightnessMultiplier).toInt().clamp(0, 255);
+    final newGreen = (green * brightnessMultiplier).toInt().clamp(0, 255);
+    final newBlue = (blue * brightnessMultiplier).toInt().clamp(0, 255);
 
-      final newRed = ((red * brightnessFactor).clamp(0, 255)).toInt();
-      final newGreen = ((green * brightnessFactor).clamp(0, 255)).toInt();
-      final newBlue = ((blue * brightnessFactor).clamp(0, 255)).toInt();
+    return (alpha << 24) | (newRed << 16) | (newGreen << 8) | newBlue;
+  }
 
-      return (alpha << 24) | (newRed << 16) | (newGreen << 8) | newBlue;
-    }
-
-    // Wave fade phase
-    final waveStartTime = _clearingCellAnimations[cellIndex];
-    final timeSinceWaveStart = _clearingElapsedTime - waveStartTime;
-
-    // Cell hasn't been reached by wave yet - keep original color
-    if (timeSinceWaveStart < 0) {
+  int _applyWaveFadeColor(int originalColor, double timeSinceWaveStart) {
+    if (timeSinceWaveStart <= 0) {
       return originalColor;
     }
 
-    // Cell is being cleared by wave - fade to transparent
-    final cellFadeProgress = (timeSinceWaveStart / _clearWaveDuration).clamp(
-      0.0,
-      1.0,
-    );
+    final alpha = (originalColor >> 24) & 0xFF;
+    final red = (originalColor >> 16) & 0xFF;
+    final green = (originalColor >> 8) & 0xFF;
+    final blue = originalColor & 0xFF;
 
-    // Fade opacity from 255 to 0
-    final newAlpha = (alpha * (1.0 - cellFadeProgress)).toInt();
+    double fadeProgress = timeSinceWaveStart * _invClearWaveDuration;
+    if (fadeProgress > 1.0) {
+      fadeProgress = 1.0;
+    }
 
+    final newAlpha = (alpha * (1.0 - fadeProgress)).toInt();
     return (newAlpha << 24) | (red << 16) | (green << 8) | blue;
   }
 
@@ -777,46 +943,7 @@ class SandGame extends FlameGame with TapCallbacks {
     );
   }
 
-  void _drawGridLines(Canvas canvas) {
-    // Regenerate grid lines picture only if offset or scale changed
-    if (_lastGridLinesOffsetX != gridOffset.dx ||
-        _lastGridLinesOffsetY != gridOffset.dy ||
-        _lastGridLinesScale != cellSize) {
-      final recorder = ui.PictureRecorder();
-      final recordingCanvas = Canvas(recorder);
-
-      final paint = Paint()
-        ..color = Colors.white12
-        ..style = PaintingStyle.stroke;
-
-      for (int x = 0; x <= cols; x++) {
-        final dx = gridOffset.dx + x * cellSize;
-        recordingCanvas.drawLine(
-          Offset(dx, gridOffset.dy),
-          Offset(dx, gridOffset.dy + rows * cellSize),
-          paint,
-        );
-      }
-
-      for (int y = 0; y <= rows; y++) {
-        final dy = gridOffset.dy + y * cellSize;
-        recordingCanvas.drawLine(
-          Offset(gridOffset.dx, dy),
-          Offset(gridOffset.dx + cols * cellSize, dy),
-          paint,
-        );
-      }
-
-      _gridLinesPicture = recorder.endRecording();
-      _lastGridLinesOffsetX = gridOffset.dx;
-      _lastGridLinesOffsetY = gridOffset.dy;
-      _lastGridLinesScale = cellSize;
-    }
-
-    // Draw the cached grid lines picture
-    canvas.drawPicture(_gridLinesPicture);
-
-    // Draw grid border
+  void _drawPlayAreaBorder(Canvas canvas) {
     final borderRect = Rect.fromLTWH(
       gridOffset.dx,
       gridOffset.dy,
@@ -824,16 +951,7 @@ class SandGame extends FlameGame with TapCallbacks {
       rows * cellSize,
     );
 
-    canvas.drawRect(
-      borderRect,
-      _gridBorderPaint,
-    );
-
-    // Optional: inner shadow effect with a slightly darker line
-    canvas.drawRect(
-      borderRect.inflate(-2),
-      _gridInnerBorderPaint,
-    );
+    canvas.drawRect(borderRect, _playAreaBorderPaint);
   }
 
   void _drawNextPiecePreview(Canvas canvas) {
@@ -842,15 +960,10 @@ class SandGame extends FlameGame with TapCallbacks {
 
     final bgRect = Rect.fromLTWH(previewX, previewY, previewSize, previewSize);
 
-    // Draw muted earth-tone gradient for preview box
-    final gradientPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(previewX, previewY),
-        Offset(previewX, previewY + previewSize),
-        [SandColors.previewBoxDark, SandColors.previewBoxLight],
-        [0.0, 1.0],
-      );
-    canvas.drawRect(bgRect, gradientPaint);
+    canvas.drawRect(
+      bgRect,
+      Paint()..color = SandColors.previewBoxDark,
+    );
 
     canvas.drawRect(
       bgRect,
@@ -972,6 +1085,11 @@ class SandGame extends FlameGame with TapCallbacks {
     _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
     _clearingElapsedTime = 0;
     _clearMask.fillRange(0, _clearMask.length, 0);
+    _lastAnimatedCellColors.fillRange(
+      0,
+      _lastAnimatedCellColors.length,
+      _unsetAnimatedColor,
+    );
     _colors.fillRange(0, _colors.length, 0);
     _updateVertexPositions();
 
@@ -1027,6 +1145,11 @@ class SandGame extends FlameGame with TapCallbacks {
       _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
       _clearingElapsedTime = 0;
       _clearMask.fillRange(0, _clearMask.length, 0);
+      _lastAnimatedCellColors.fillRange(
+        0,
+        _lastAnimatedCellColors.length,
+        _unsetAnimatedColor,
+      );
       _syncAllCellColorsFromWorld();
       _updateVertexPositions();
       _needsGameOverEvaluation = true;
@@ -1034,5 +1157,68 @@ class SandGame extends FlameGame with TapCallbacks {
     } catch (e) {
       // Silently fail if load is corrupted
     }
+  }
+}
+
+class _PerfMeter {
+  static const bool _enabled = kDebugMode || kProfileMode;
+
+  final String name;
+  final Map<String, int> _totalsUs = <String, int>{};
+  final Map<String, int> _maxUs = <String, int>{};
+  final Map<String, int> _counts = <String, int>{};
+  int _samples = 0;
+
+  _PerfMeter(this.name);
+
+  Stopwatch? startFrame() {
+    if (!_enabled) return null;
+    return Stopwatch()..start();
+  }
+
+  void endFrame(Stopwatch? stopwatch, String section) {
+    if (!_enabled || stopwatch == null) return;
+    stopwatch.stop();
+    _record(section, stopwatch.elapsedMicroseconds);
+    _samples++;
+
+    if (_samples >= 240) {
+      _flush();
+    }
+  }
+
+  T measure<T>(String section, T Function() work) {
+    if (!_enabled) return work();
+    final sw = Stopwatch()..start();
+    final result = work();
+    sw.stop();
+    _record(section, sw.elapsedMicroseconds);
+    return result;
+  }
+
+  void _record(String section, int elapsedUs) {
+    _totalsUs[section] = (_totalsUs[section] ?? 0) + elapsedUs;
+    _counts[section] = (_counts[section] ?? 0) + 1;
+    final previousMax = _maxUs[section] ?? 0;
+    if (elapsedUs > previousMax) {
+      _maxUs[section] = elapsedUs;
+    }
+  }
+
+  void _flush() {
+    final sections = _totalsUs.keys.toList(growable: false)..sort();
+    final metrics = <String>[];
+    for (final section in sections) {
+      final count = _counts[section] ?? 1;
+      final avgMs = (_totalsUs[section]! / count) / 1000.0;
+      final maxMs = (_maxUs[section]! / 1000.0);
+      metrics.add('$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms');
+    }
+
+    debugPrint('[$name perf] ${metrics.join(' | ')}');
+    _totalsUs.clear();
+    _maxUs.clear();
+    _counts.clear();
+    _samples = 0;
   }
 }

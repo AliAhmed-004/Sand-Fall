@@ -40,7 +40,6 @@ class _PauseOverlayState extends State<PauseOverlay> {
 
   void _mainMenu() {
     widget.game.resetGameState();
-    widget.game.resumeEngine();
     widget.game.overlays.remove(GameConfig.pauseOverlay);
     widget.game.overlays.remove(GameConfig.hudOverlay);
     widget.game.overlays.add(GameConfig.mainMenuOverlay);
