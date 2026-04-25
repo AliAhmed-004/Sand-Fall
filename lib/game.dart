@@ -67,6 +67,7 @@ class SandGame extends FlameGame with TapCallbacks {
   // Track stability to trigger bridge checks only when the board transitions from unstable to stable
   bool _wasStableLastFrame = true;
   bool _needsSimulation = false;
+  bool _needsBridgeEvaluation = false;
   double _avgFrameMs = _targetFrameMs;
   int _consecutiveSlowFrames = 0;
 
@@ -403,6 +404,7 @@ class SandGame extends FlameGame with TapCallbacks {
     if (sandWorld.placeShape(nextShape, gridX, gridY, nextColor)) {
       _generateNextPiece();
       _needsSimulation = true;
+      _needsBridgeEvaluation = true;
       _needsGameOverEvaluation = true;
       // Show placement immediately instead of waiting for the next fixed step.
       sandWorld.syncGridNow();
@@ -596,7 +598,12 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     }
 
-    if (sandWorld.isStable && !_wasStableLastFrame) {
+    final shouldEvaluateBridges =
+        sandWorld.isStable && (!_wasStableLastFrame || _needsBridgeEvaluation);
+
+    if (shouldEvaluateBridges) {
+      _needsBridgeEvaluation = false;
+
       // Merge adjacent same-color clusters to reduce fragmentation
       _perfMeter.measure('merge_adjacent_clusters', sandWorld.mergeAdjacentClusters);
 
@@ -1071,6 +1078,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _previousMilestone = 0;
     _wasStableLastFrame = true;
     _needsSimulation = false;
+    _needsBridgeEvaluation = false;
     _accumulator = 0;
     _placementsSinceLastSave = 0;
     _hasPendingAutosave = false;
@@ -1122,6 +1130,11 @@ class SandGame extends FlameGame with TapCallbacks {
       // Rebuild clusters from the restored grid
       sandWorld.rebuildClusters(sandWorld);
 
+      // Prime world dirty tracking and edge caches from rebuilt clusters.
+      // Without this, the first post-load movement can leave stale pixels
+      // because previous-frame occupied indices are still empty.
+      sandWorld.syncGridNow();
+
       // Restore score
       ScoringService.instance.setScore(score);
 
@@ -1131,6 +1144,7 @@ class SandGame extends FlameGame with TapCallbacks {
       _previousMilestone = MilestoneService.instance.getCurrentMilestone(score);
       _wasStableLastFrame = true;
       _needsSimulation = false;
+      _needsBridgeEvaluation = false;
       _accumulator = 0;
       _placementsSinceLastSave = 0;
       _hasPendingAutosave = false;

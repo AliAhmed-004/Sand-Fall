@@ -69,6 +69,7 @@ class SparseGameStateDTO {
           int runLength = 1;
           while (x + runLength < cols) {
             final nextIdx = idx + runLength;
+            if (grid[nextIdx] == 0) break;
             if (baseIds[nextIdx] != baseColorId) break;
             runLength++;
           }

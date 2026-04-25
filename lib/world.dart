@@ -928,6 +928,10 @@ class SandWorld {
 
   // Rebuild cluster from saved game
   void rebuildClusters(SandWorld world) {
+    world.clusters.clear();
+    world.cellIdMap.fillRange(0, world.cellIdMap.length, 0);
+    world._nextClusterId = 1;
+
     // Clear dirty tracking and edge colors to get fresh state after rebuild
     world._previousFrameCellCount = 0;
     world._currentFrameCellCount = 0;
@@ -937,16 +941,15 @@ class SandWorld {
 
     final visited = <int>{};
     final cols = world.cols;
-    final rows = world.rows;
 
     for (int i = 0; i < world.gridColorBuffer.length; i++) {
       if (world.gridColorBuffer[i] == 0 || visited.contains(i)) continue;
 
-      final color = world.gridColorBuffer[i];
-      // Use saved baseColorId if available, otherwise try to reconstruct
-      final colorId = world.baseColorIdBuffer[i] != 0
-          ? world.baseColorIdBuffer[i]
-          : world._getColorIdFromValue(color);
+      final seedColor = world.gridColorBuffer[i];
+      final seedBaseColorId = world.baseColorIdBuffer[i];
+      final colorId = seedBaseColorId < 6
+        ? seedBaseColorId
+        : world._getColorIdFromValue(seedColor);
 
       final queue = [i];
       final cells = <Cell>[];
@@ -957,19 +960,32 @@ class SandWorld {
         final idx = queue.removeLast();
         final x = idx % cols;
         final y = idx ~/ cols;
+        final cellColor = world.gridColorBuffer[idx];
 
-        cells.add(Cell(x, y, Color(color), colorId));
+        cells.add(Cell(x, y, Color(cellColor), colorId));
 
-        final neighbors = [idx + 1, idx - 1, idx + cols, idx - cols];
+        void enqueueIfConnected(int nx, int ny) {
+          if (!world.isInside(nx, ny)) return;
 
-        for (final n in neighbors) {
-          if (n < 0 || n >= cols * rows) continue;
-          if (visited.contains(n)) continue;
-          if (world.gridColorBuffer[n] != color) continue;
+          final neighborIdx = ny * cols + nx;
+          if (visited.contains(neighborIdx)) return;
+          if (world.gridColorBuffer[neighborIdx] == 0) return;
 
-          visited.add(n);
-          queue.add(n);
+          final neighborBaseColorId = world.baseColorIdBuffer[neighborIdx];
+          final neighborColorId = neighborBaseColorId < 6
+              ? neighborBaseColorId
+              : world._getColorIdFromValue(world.gridColorBuffer[neighborIdx]);
+
+          if (neighborColorId != colorId) return;
+
+          visited.add(neighborIdx);
+          queue.add(neighborIdx);
         }
+
+        enqueueIfConnected(x - 1, y);
+        enqueueIfConnected(x + 1, y);
+        enqueueIfConnected(x, y - 1);
+        enqueueIfConnected(x, y + 1);
       }
 
       world._createCluster(cells);
