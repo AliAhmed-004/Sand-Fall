@@ -28,7 +28,7 @@ class MainMenuOverlay extends StatelessWidget {
           Center(
             child: Container(
               decoration: BoxDecoration(
-                color: SandColors.darkBg.withAlpha(200),
+                color: SandColors.darkBg.withAlpha(80),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Column(
