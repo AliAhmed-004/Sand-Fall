@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'dart:math' as Math;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
@@ -96,6 +96,7 @@ class _FallingTetrominoBackground extends StatefulWidget {
 class _FallingTetrominoBackgroundState
     extends State<_FallingTetrominoBackground>
     with SingleTickerProviderStateMixin {
+  static const Duration _cycleDuration = Duration(milliseconds: 5000);
   late AnimationController _controller;
   final Random _random = Random();
 
@@ -155,7 +156,10 @@ class _FallingTetrominoBackgroundState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 8000),
+      duration: _cycleDuration,
+      // Keep this background animation time-based even if OS-level
+      // "disable animations" is enabled.
+      animationBehavior: AnimationBehavior.preserve,
     );
     _selectNewShape();
     _controller.addStatusListener(_onAnimationStatus);
@@ -171,8 +175,7 @@ class _FallingTetrominoBackgroundState
 
   void _onAnimationStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed) {
-      setState(() {});
-      _selectNewShape();
+      setState(_selectNewShape);
       _controller.reset();
       _controller.forward();
     }
@@ -204,6 +207,9 @@ class _FallingTetrominoBackgroundState
 }
 
 class _TetrominoPainter extends CustomPainter {
+  static const double _fallPhaseEnd = 0.82;
+  static const double _scatterDistance = 16.0;
+
   final List<List<int>> cells;
   final double progress;
   final double cellSize;
@@ -216,12 +222,15 @@ class _TetrominoPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Fall phase: 0.0 - 0.6
-    // Scatter phase: 0.6 - 1.0
-    final double fallEnd = 0.6;
-    final double fallProgress = (progress / fallEnd).clamp(0.0, 1.0);
-    final double scatterProgress = ((progress - fallEnd) / (1.0 - fallEnd))
+    // Fall phase: 0.0 - 0.82 (~1.0s)
+    // Scatter phase: 0.82 - 1.0 (~0.2s)
+    final double fallProgress = (progress / _fallPhaseEnd).clamp(0.0, 1.0);
+    final double scatterProgress =
+        ((progress - _fallPhaseEnd) / (1.0 - _fallPhaseEnd))
         .clamp(0.0, 1.0);
+    final double easedScatterProgress = Curves.easeInOut.transform(
+      scatterProgress,
+    );
 
     // Calculate starting Y so piece falls from above screen to bottom
     final double pieceWidth =
@@ -231,14 +240,14 @@ class _TetrominoPainter extends CustomPainter {
     final double startY = -pieceHeight - 50;
     final double endY = size.height - pieceHeight;
     final double currentY =
-        startY + (endY - startY) * Curves.easeIn.transform(fallProgress);
+      startY + (endY - startY) * Curves.linear.transform(fallProgress);
 
     // Center the piece horizontally
     final double startX = (size.width - pieceWidth) / 2;
 
-    final double alpha = progress < fallEnd
+    final double alpha = progress < _fallPhaseEnd
         ? 120.0
-        : 120.0 * (1.0 - scatterProgress);
+      : 120.0 * (1.0 - easedScatterProgress);
     final paint = Paint()
       ..color = SandColors.primaryGold.withAlpha(alpha.round())
       ..style = PaintingStyle.fill;
@@ -249,8 +258,9 @@ class _TetrominoPainter extends CustomPainter {
 
       // Apply scatter after landing
       if (scatterProgress > 0) {
-        final double angle = _randomForCell(cell) * 2 * Math.pi;
-        final double distance = scatterProgress * 30 * _randomForCell2(cell);
+        final double angle = _randomForCell(cell) * 2 * math.pi;
+        final double distance =
+            easedScatterProgress * _scatterDistance * _randomForCell2(cell);
         x += cos(angle) * distance;
         y += sin(angle) * distance;
       }
