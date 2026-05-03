@@ -12,6 +12,7 @@ import 'package:sandfall/ui/game_over_overlay.dart';
 import 'package:sandfall/ui/hud_overlay.dart';
 import 'package:sandfall/ui/main_menu_overlay.dart';
 import 'package:sandfall/ui/pause_overlay.dart';
+import 'package:sandfall/ui/tutorial_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,8 @@ class SandCrush extends StatelessWidget {
               HudOverlay(game: game as SandGame),
           GameConfig.pauseOverlay: (context, game) =>
               PauseOverlay(game: game as SandGame),
+            GameConfig.tutorialOverlay: (context, game) =>
+              TutorialOverlay(game: game as SandGame),
           GameConfig.celebrationOverlay: (context, game) =>
               CelebrationOverlay(game: game as SandGame),
           GameConfig.gameOverOverlay: (context, game) =>

@@ -49,69 +49,122 @@ class _PauseOverlayState extends State<PauseOverlay> {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.black.withAlpha(160),
-      child: Center(
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-          decoration: BoxDecoration(
-            color: SandColors.darkBg.withAlpha(240),
-            border: Border.all(color: SandColors.deepSand, width: 2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'PAUSED',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: SandColors.primaryGold,
-                  letterSpacing: 3,
-                  fontFamily: 'monospace',
-                ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: 16,
+            right: 16,
+            child: SafeArea(
+              child: _HelpButton(
+                onPressed: () {
+                  widget.game.overlays.add(GameConfig.tutorialOverlay);
+                },
               ),
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 320,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+              decoration: BoxDecoration(
+                color: SandColors.darkBg.withAlpha(240),
+                border: Border.all(color: SandColors.deepSand, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'PAUSED',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: SandColors.primaryGold,
+                      letterSpacing: 3,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              MenuButton(label: 'RESUME', onPressed: _resume),
-              const SizedBox(height: 10),
+                  MenuButton(label: 'RESUME', onPressed: _resume),
+                  const SizedBox(height: 10),
 
-              MenuButton(label: 'RESTART', onPressed: _restart),
-              const SizedBox(height: 10),
+                  MenuButton(label: 'RESTART', onPressed: _restart),
+                  const SizedBox(height: 10),
 
-              MenuButton(label: 'MAIN MENU', onPressed: _mainMenu),
+                  MenuButton(label: 'MAIN MENU', onPressed: _mainMenu),
 
-              const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-              Divider(color: SandColors.deepSand.withAlpha(100), height: 1),
+                  Divider(color: SandColors.deepSand.withAlpha(100), height: 1),
 
-              // const SizedBox(height: 18),
-              //
-              // _SettingRow(
-              //   label: 'Sound',
-              //   value: _soundEnabled,
-              //   onChanged: (value) {
-              //     setState(() {
-              //       _soundEnabled = value;
-              //     });
-              //   },
-              // ),
-              //
-              // const SizedBox(height: 10),
-              //
-              // _SettingRow(
-              //   label: 'Haptics',
-              //   value: _hapticEnabled,
-              //   onChanged: (value) {
-              //     setState(() {
-              //       _hapticEnabled = value;
-              //     });
-              //   },
-              // ),
-            ],
+                  // const SizedBox(height: 18),
+                  //
+                  // _SettingRow(
+                  //   label: 'Sound',
+                  //   value: _soundEnabled,
+                  //   onChanged: (value) {
+                  //     setState(() {
+                  //       _soundEnabled = value;
+                  //     });
+                  //   },
+                  // ),
+                  //
+                  // const SizedBox(height: 10),
+                  //
+                  // _SettingRow(
+                  //   label: 'Haptics',
+                  //   value: _hapticEnabled,
+                  //   onChanged: (value) {
+                  //     setState(() {
+                  //       _hapticEnabled = value;
+                  //     });
+                  //   },
+                  // ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HelpButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _HelpButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: Ink(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: SandColors.darkBg.withAlpha(160),
+            border: Border.all(color: SandColors.primaryGold.withAlpha(220)),
+          ),
+          child: const Center(
+            child: Text(
+              '?',
+              style: TextStyle(
+                color: SandColors.primaryGold,
+                fontWeight: FontWeight.w900,
+                fontSize: 22,
+                height: 1.0,
+                fontFamily: 'monospace',
+              ),
+            ),
           ),
         ),
       ),
@@ -119,39 +172,3 @@ class _PauseOverlayState extends State<PauseOverlay> {
   }
 }
 
-class _SettingRow extends StatelessWidget {
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _SettingRow({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              color: SandColors.lightSand.withAlpha(180),
-              fontSize: 13,
-              letterSpacing: 1.5,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: SandColors.primaryGold,
-          activeTrackColor: SandColors.deepSand.withAlpha(150),
-        ),
-      ],
-    );
-  }
-}

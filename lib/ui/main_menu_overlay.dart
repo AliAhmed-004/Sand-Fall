@@ -25,6 +25,17 @@ class MainMenuOverlay extends StatelessWidget {
       child: Stack(
         children: [
           const Positioned.fill(child: _FallingTetrominoBackground()),
+          Positioned(
+            top: 16,
+            right: 16,
+            child: SafeArea(
+              child: _HelpButton(
+                onPressed: () {
+                  game.overlays.add(GameConfig.tutorialOverlay);
+                },
+              ),
+            ),
+          ),
           Center(
             child: Container(
               decoration: BoxDecoration(
@@ -91,6 +102,44 @@ class _FallingTetrominoBackground extends StatefulWidget {
   @override
   State<_FallingTetrominoBackground> createState() =>
       _FallingTetrominoBackgroundState();
+}
+
+class _HelpButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _HelpButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: Ink(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: SandColors.darkBg.withAlpha(160),
+            border: Border.all(color: SandColors.primaryGold.withAlpha(220)),
+          ),
+          child: const Center(
+            child: Text(
+              '?',
+              style: TextStyle(
+                color: SandColors.primaryGold,
+                fontWeight: FontWeight.w900,
+                fontSize: 22,
+                height: 1.0,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _FallingTetrominoBackgroundState
