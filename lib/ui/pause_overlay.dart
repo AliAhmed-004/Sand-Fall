@@ -51,17 +51,6 @@ class _PauseOverlayState extends State<PauseOverlay> {
       color: Colors.black.withAlpha(160),
       child: Stack(
         children: [
-          Positioned(
-            top: 16,
-            right: 16,
-            child: SafeArea(
-              child: _HelpButton(
-                onPressed: () {
-                  widget.game.overlays.add(GameConfig.tutorialOverlay);
-                },
-              ),
-            ),
-          ),
           Center(
             child: Container(
               width: 320,
@@ -101,6 +90,15 @@ class _PauseOverlayState extends State<PauseOverlay> {
 
                   Divider(color: SandColors.deepSand.withAlpha(100), height: 1),
 
+                  const SizedBox(height: 16),
+
+                  MenuButton.secondary(
+                    label: 'HOW TO PLAY',
+                    onPressed: () {
+                      widget.game.overlays.add(GameConfig.tutorialOverlay);
+                    },
+                  ),
+
                   // const SizedBox(height: 18),
                   //
                   // _SettingRow(
@@ -129,44 +127,6 @@ class _PauseOverlayState extends State<PauseOverlay> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _HelpButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _HelpButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: Ink(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: SandColors.darkBg.withAlpha(160),
-            border: Border.all(color: SandColors.primaryGold.withAlpha(220)),
-          ),
-          child: const Center(
-            child: Text(
-              '?',
-              style: TextStyle(
-                color: SandColors.primaryGold,
-                fontWeight: FontWeight.w900,
-                fontSize: 22,
-                height: 1.0,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

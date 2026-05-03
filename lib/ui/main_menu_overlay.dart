@@ -25,17 +25,6 @@ class MainMenuOverlay extends StatelessWidget {
       child: Stack(
         children: [
           const Positioned.fill(child: _FallingTetrominoBackground()),
-          Positioned(
-            top: 16,
-            right: 16,
-            child: SafeArea(
-              child: _HelpButton(
-                onPressed: () {
-                  game.overlays.add(GameConfig.tutorialOverlay);
-                },
-              ),
-            ),
-          ),
           Center(
             child: Container(
               decoration: BoxDecoration(
@@ -85,6 +74,21 @@ class MainMenuOverlay extends StatelessWidget {
                     },
                   ),
 
+                  Divider(
+                    height: 32,
+                    thickness: 1,
+                    color: SandColors.lightSand.withAlpha(100),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  MenuButton.secondary(
+                    label: 'HOW TO PLAY',
+                    onPressed: () {
+                      game.overlays.add(GameConfig.tutorialOverlay);
+                    },
+                  ),
+
                   const Spacer(flex: 3),
                 ],
               ),
@@ -104,44 +108,6 @@ class _FallingTetrominoBackground extends StatefulWidget {
       _FallingTetrominoBackgroundState();
 }
 
-class _HelpButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _HelpButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: Ink(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: SandColors.darkBg.withAlpha(160),
-            border: Border.all(color: SandColors.primaryGold.withAlpha(220)),
-          ),
-          child: const Center(
-            child: Text(
-              '?',
-              style: TextStyle(
-                color: SandColors.primaryGold,
-                fontWeight: FontWeight.w900,
-                fontSize: 22,
-                height: 1.0,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _FallingTetrominoBackgroundState
     extends State<_FallingTetrominoBackground>
     with SingleTickerProviderStateMixin {
@@ -154,44 +120,6 @@ class _FallingTetrominoBackgroundState
     [
       [0, 0],
       [1, 0],
-      [2, 0],
-      [3, 0],
-    ], // I
-    [
-      [0, 0],
-      [1, 0],
-      [0, 1],
-      [1, 1],
-    ], // O
-    [
-      [0, 0],
-      [1, 0],
-      [2, 0],
-      [1, 1],
-    ], // T
-    [
-      [1, 0],
-      [2, 0],
-      [0, 1],
-      [1, 1],
-    ], // S
-    [
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [2, 1],
-    ], // Z
-    [
-      [0, 0],
-      [0, 1],
-      [1, 1],
-      [2, 1],
-    ], // J
-    [
-      [2, 0],
-      [0, 1],
-      [1, 1],
-      [2, 1],
     ], // L
   ];
 
