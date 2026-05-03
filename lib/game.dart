@@ -86,7 +86,7 @@ class SandGame extends FlameGame with TapCallbacks {
   int _nextShapeMaxY = 0;
 
   // Preview UI settings
-  final double previewSize = 120.0; // size of the preview box in pixels
+  double previewSize = 120.0; // size of the preview box in pixels
   final int previewGridSize = 6; // small grid (e.g. 6x6) for preview
 
   bool _isLoaded = false;
@@ -249,6 +249,14 @@ class SandGame extends FlameGame with TapCallbacks {
     gridOffset = Offset(
       horizontalPadding + (playableWidth - gridWidth) / 2,
       topUIHeight + (playableHeight - gridHeight) / 2,
+    );
+
+    final gridBottom = gridOffset.dy + gridHeight;
+    final maxPreviewByWidth = size.x * 0.34;
+    final maxPreviewByHeight = size.y - gridBottom - 24.0;
+    previewSize = max(
+      72.0,
+      min(120.0, min(maxPreviewByWidth, maxPreviewByHeight)),
     );
 
     // Recompute static vertex positions if buffers are ready
@@ -965,8 +973,9 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   void _drawNextPiecePreview(Canvas canvas) {
+    final gridBottom = gridOffset.dy + rows * cellSize;
     final previewX = (size.x - previewSize) / 2;
-    final previewY = size.y - previewSize - 40;
+    final previewY = max(gridBottom + 16, size.y - previewSize - 32);
 
     final bgRect = Rect.fromLTWH(previewX, previewY, previewSize, previewSize);
 
@@ -994,10 +1003,18 @@ class SandGame extends FlameGame with TapCallbacks {
 
     if (nextShape.isEmpty) return;
 
-    final previewCellSize = cellSize;
-
     final shapeWidth = _nextShapeMaxX - _nextShapeMinX + 1;
     final shapeHeight = _nextShapeMaxY - _nextShapeMinY + 1;
+    final inset = previewSize * 0.18;
+    final availableWidth = previewSize - inset * 2;
+    final availableHeight = previewSize - inset * 2;
+    final previewCellSize = max(
+      2.0,
+      min(
+        cellSize,
+        min(availableWidth / shapeWidth, availableHeight / shapeHeight),
+      ),
+    );
 
     final totalShapeWidth = shapeWidth * previewCellSize;
     final totalShapeHeight = shapeHeight * previewCellSize;
