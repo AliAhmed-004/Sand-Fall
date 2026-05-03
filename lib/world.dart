@@ -59,7 +59,7 @@ class SandWorld {
   bool _isGameOver = false;
   bool get isGameOver => _isGameOver;
 
-  // Top 10% threshold: if sand reaches this row from the top, game is over
+  // Top 15% threshold: if sand reaches this row from the top, game is over
   late int _gameOverThresholdRow;
   int get gameOverThresholdRow => _gameOverThresholdRow;
 
@@ -126,7 +126,7 @@ class SandWorld {
       -cols + 1,
       -cols - 1,
     ];
-    _gameOverThresholdRow = (rows * 0.1).ceil(); // Top 10% of rows
+    _gameOverThresholdRow = (rows * 0.15).ceil(); // Top 15% of rows
   }
 
   // =========================================================
