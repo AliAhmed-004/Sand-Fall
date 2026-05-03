@@ -7,24 +7,40 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:sandfall/main.dart';
+import 'package:sandfall/world.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('primeDirtyTracking + syncGridNow should populate lastDirtyCellIndices', () {
+    const cols = 5;
+    const rows = 5;
+    final world = SandWorld(cols: cols, rows: rows);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Pick a cell and mark it occupied in the raw buffers to simulate a loaded save
+    final int testX = 2;
+    final int testY = rows - 1; // bottom row
+    final int idx = testY * cols + testX;
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    world.gridColorBuffer[idx] = const Color(0xFF0000FF).value; // arbitrary color
+    world.baseColorIdBuffer[idx] = 1; // valid base color id
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Rebuild clusters from the raw buffers (similar to load flow)
+    world.rebuildClusters(world);
+
+    // Prime dirty-tracking (the fix we added)
+    world.primeDirtyTracking();
+
+    // Now run a sync which should clear previous-frame cells and populate lastDirtyCellIndices
+    world.syncGridNow();
+
+    expect(world.lastDirtyCellCount, greaterThan(0));
+
+    bool found = false;
+    for (int i = 0; i < world.lastDirtyCellCount; i++) {
+      if (world.lastDirtyCellIndices[i] == idx) {
+        found = true;
+        break;
+      }
+    }
+    expect(found, isTrue, reason: 'Expected lastDirtyCellIndices to contain the test index');
   });
 }

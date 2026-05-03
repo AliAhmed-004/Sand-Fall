@@ -991,6 +991,21 @@ class SandWorld {
       world._createCluster(cells);
     }
   }
+
+  /// Primes the previous-frame dirty tracking buffer with current occupied
+  /// cell indices. Call this after loading or rebuilding the world so the
+  /// next `_syncGridFromClusters()` call can correctly detect cleared cells
+  /// and populate `_lastDirtyCellIndices`.
+  void primeDirtyTracking() {
+    int count = 0;
+    final len = gridColorBuffer.length;
+    for (int i = 0; i < len; i++) {
+      if (gridColorBuffer[i] != 0) {
+        _previousFrameCellIndices[count++] = i;
+      }
+    }
+    _previousFrameCellCount = count;
+  }
 }
 
 class _WorldPerfMeter {
@@ -1051,7 +1066,6 @@ class _WorldPerfMeter {
       metrics.add('$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms');
     }
 
-    debugPrint('[$name perf] ${metrics.join(' | ')}');
     _totalsUs.clear();
     _maxUs.clear();
     _counts.clear();

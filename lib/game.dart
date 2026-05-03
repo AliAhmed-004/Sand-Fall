@@ -1130,6 +1130,10 @@ class SandGame extends FlameGame with TapCallbacks {
       // Rebuild clusters from the restored grid
       sandWorld.rebuildClusters(sandWorld);
 
+      // Prime dirty-tracking so subsequent syncs can detect cleared cells
+      // and populate `lastDirtyCellIndices` correctly.
+      sandWorld.primeDirtyTracking();
+
       // Prime world dirty tracking and edge caches from rebuilt clusters.
       // Without this, the first post-load movement can leave stale pixels
       // because previous-frame occupied indices are still empty.
@@ -1223,7 +1227,6 @@ class _PerfMeter {
       metrics.add('$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms');
     }
 
-    debugPrint('[$name perf] ${metrics.join(' | ')}');
     _totalsUs.clear();
     _maxUs.clear();
     _counts.clear();
