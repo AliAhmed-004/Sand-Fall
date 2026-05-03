@@ -574,10 +574,11 @@ class SandGame extends FlameGame with TapCallbacks {
       _previousMilestone = currentMilestone;
 
       final unlockedColorIndex =
-        MilestoneService.instance.getUnlockedColorCount(currentScore, 3) - 1;
-      final unlockedColor = SandGame.colors[
-        unlockedColorIndex.clamp(0, SandGame.colors.length - 1).toInt()
-      ];
+          MilestoneService.instance.getUnlockedColorCount(currentScore, 3) - 1;
+      final unlockedColor =
+          SandGame.colors[unlockedColorIndex
+              .clamp(0, SandGame.colors.length - 1)
+              .toInt()];
 
       if (_enableConfetti) {
         // Emit confetti from progress bar area (top portion of game).
@@ -602,6 +603,7 @@ class SandGame extends FlameGame with TapCallbacks {
             currentScore,
           ),
           targetPosition: Offset(size.x / 2, badgeY),
+          screenWidth: size.x,
         );
       }
     }
@@ -613,7 +615,10 @@ class SandGame extends FlameGame with TapCallbacks {
       _needsBridgeEvaluation = false;
 
       // Merge adjacent same-color clusters to reduce fragmentation
-      _perfMeter.measure('merge_adjacent_clusters', sandWorld.mergeAdjacentClusters);
+      _perfMeter.measure(
+        'merge_adjacent_clusters',
+        sandWorld.mergeAdjacentClusters,
+      );
 
       // Start a clear session to track combo bonuses
       ScoringService.instance.startClearSession();
@@ -640,7 +645,10 @@ class SandGame extends FlameGame with TapCallbacks {
         if (_enableClearAnimation) {
           _startClearingAnimation(clearList);
         } else {
-          _perfMeter.measure('finalize_clear', () => sandWorld.finalizeClear(clearList));
+          _perfMeter.measure(
+            'finalize_clear',
+            () => sandWorld.finalizeClear(clearList),
+          );
           _setMultipleCellColorsInVertexBuffer(clearList, 0);
           _needsSimulation = true;
           _needsGameOverEvaluation = true;
@@ -785,18 +793,15 @@ class SandGame extends FlameGame with TapCallbacks {
     if (_needsVertexUpdate || _cachedVertices == null) {
       _cachedVertices = _perfMeter.measure(
         'vertices_rebuild',
-        () => Vertices.raw(
-          VertexMode.triangles,
-          _vertices,
-          colors: _colors,
-        ),
+        () => Vertices.raw(VertexMode.triangles, _vertices, colors: _colors),
       );
       _needsVertexUpdate = false;
     }
 
     _perfMeter.measure(
       'draw_vertices',
-      () => canvas.drawVertices(_cachedVertices!, BlendMode.src, _verticesPaint),
+      () =>
+          canvas.drawVertices(_cachedVertices!, BlendMode.src, _verticesPaint),
     );
 
     _drawPlayAreaBorder(canvas);
@@ -861,7 +866,10 @@ class SandGame extends FlameGame with TapCallbacks {
 
       for (final cellIndex in _cellsToClears) {
         final originalColor = gridColorBuffer[cellIndex];
-        final animatedColor = _applyFlashColor(originalColor, brightnessMultiplier);
+        final animatedColor = _applyFlashColor(
+          originalColor,
+          brightnessMultiplier,
+        );
         _queueAnimatedColorIfChanged(cellIndex, animatedColor);
       }
     } else {
@@ -869,7 +877,10 @@ class SandGame extends FlameGame with TapCallbacks {
         final originalColor = gridColorBuffer[cellIndex];
         final waveStartTime = _clearingCellAnimations[cellIndex];
         final timeSinceWaveStart = _clearingElapsedTime - waveStartTime;
-        final animatedColor = _applyWaveFadeColor(originalColor, timeSinceWaveStart);
+        final animatedColor = _applyWaveFadeColor(
+          originalColor,
+          timeSinceWaveStart,
+        );
         _queueAnimatedColorIfChanged(cellIndex, animatedColor);
       }
     }
@@ -979,10 +990,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
     final bgRect = Rect.fromLTWH(previewX, previewY, previewSize, previewSize);
 
-    canvas.drawRect(
-      bgRect,
-      Paint()..color = SandColors.previewBoxDark,
-    );
+    canvas.drawRect(bgRect, Paint()..color = SandColors.previewBoxDark);
 
     canvas.drawRect(
       bgRect,
@@ -1052,7 +1060,9 @@ class SandGame extends FlameGame with TapCallbacks {
     if (_floatingScoreTextPainter == null ||
         _floatingScorePainterValue != fs.value ||
         _floatingScorePainterType != fs.type) {
-      final color = fs.type == FloatingScoreType.tap ? Colors.white : Colors.amber;
+      final color = fs.type == FloatingScoreType.tap
+          ? Colors.white
+          : Colors.amber;
       _floatingScoreTextPainter = TextPainter(
         text: TextSpan(
           text: '+${fs.value}',
@@ -1079,10 +1089,7 @@ class SandGame extends FlameGame with TapCallbacks {
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
     canvas.scale(scale, scale);
-    tp.paint(
-      canvas,
-      Offset(-tp.width / 2, -tp.height / 2),
-    );
+    tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
     canvas.restore();
   }
 
@@ -1241,7 +1248,9 @@ class _PerfMeter {
       final count = _counts[section] ?? 1;
       final avgMs = (_totalsUs[section]! / count) / 1000.0;
       final maxMs = (_maxUs[section]! / 1000.0);
-      metrics.add('$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms');
+      metrics.add(
+        '$section avg=${avgMs.toStringAsFixed(2)}ms max=${maxMs.toStringAsFixed(2)}ms',
+      );
     }
 
     _totalsUs.clear();

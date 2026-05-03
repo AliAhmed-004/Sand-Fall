@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
 class NotificationBadge {
+  static const double enterDuration = 0.45;
+  static const double holdDuration = 6.0;
+  static const double exitDuration = 0.45;
+  static const double slideMargin = 24.0;
+  static const double badgeWidth = 260.0;
+  static const double badgeHeight = 100.0;
+
   final int milestone;
   final Color unlockedColor;
   final int nextMilestoneScore;
   final Offset targetPosition;
+  final double screenWidth;
 
   double elapsed;
-  static const duration = 3.0;
-  static const riseSpeed = 40.0;
 
   late final TextPainter _milestonePainter;
   late final TextPainter _unlockedPainter;
@@ -19,6 +25,7 @@ class NotificationBadge {
     required this.unlockedColor,
     required this.nextMilestoneScore,
     required this.targetPosition,
+    required this.screenWidth,
   }) : elapsed = 0 {
     _milestonePainter = TextPainter(
       text: TextSpan(
@@ -49,38 +56,60 @@ class NotificationBadge {
     _nextPainter = TextPainter(
       text: TextSpan(
         text: 'Next: ${_formatScore(nextMilestoneScore)} pts',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-        ),
+        style: const TextStyle(color: Colors.white, fontSize: 11),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
   }
 
+  double get totalDuration => enterDuration + holdDuration + exitDuration;
+
+  double get _enterEnd => enterDuration;
+
+  double get _holdEnd => enterDuration + holdDuration;
+
+  double get _offscreenRightX => screenWidth + (badgeWidth / 2) + slideMargin;
+
+  double get _enterProgress => (elapsed / enterDuration).clamp(0.0, 1.0);
+
+  double get _exitProgress {
+    if (elapsed <= _holdEnd) {
+      return 0;
+    }
+    return ((elapsed - _holdEnd) / exitDuration).clamp(0.0, 1.0);
+  }
+
   Offset get currentPosition {
+    if (elapsed < _enterEnd) {
+      final t = Curves.easeOutCubic.transform(_enterProgress);
+      return Offset(
+        _offscreenRightX + (targetPosition.dx - _offscreenRightX) * t,
+        targetPosition.dy,
+      );
+    }
+
+    if (elapsed < _holdEnd) {
+      return targetPosition;
+    }
+
+    final t = Curves.easeInCubic.transform(_exitProgress);
     return Offset(
-      targetPosition.dx,
-      targetPosition.dy - riseSpeed * elapsed,
+      targetPosition.dx + (_offscreenRightX - targetPosition.dx) * t,
+      targetPosition.dy,
     );
   }
 
   double get alpha {
-    final progress = elapsed / duration;
-    if (progress > 0.7) {
-      return 1.0 - ((progress - 0.7) / 0.3);
+    if (elapsed < _holdEnd) {
+      return 1.0;
     }
-    return 1.0;
+
+    return 1.0 - Curves.easeIn.transform(_exitProgress);
   }
 
-  double get scale {
-    if (elapsed < 0.15) {
-      return 0.5 + (elapsed / 0.15) * 0.5;
-    }
-    return 1.0;
-  }
+  double get scale => 1.0;
 
-  bool get isExpired => elapsed >= duration;
+  bool get isExpired => elapsed >= totalDuration;
 
   void update(double dt) {
     elapsed += dt;
@@ -90,17 +119,28 @@ class NotificationBadge {
     if (alpha <= 0 || scale <= 0) return;
 
     final pos = currentPosition;
-    final s = scale;
+    final opacity = alpha.clamp(0.0, 1.0);
 
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
-    canvas.scale(s);
+
+    canvas.saveLayer(
+      Rect.fromCenter(
+        center: Offset.zero,
+        width: badgeWidth + 60,
+        height: badgeHeight + 40,
+      ),
+      Paint()..color = Colors.white.withOpacity(opacity),
+    );
 
     // Badge background
-    final bgPaint = Paint()
-      ..color = const Color(0xE61A1A2E);
+    final bgPaint = Paint()..color = const Color(0xE61A1A2E);
     final bgRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset.zero, width: 260, height: 100),
+      Rect.fromCenter(
+        center: Offset.zero,
+        width: badgeWidth,
+        height: badgeHeight,
+      ),
       const Radius.circular(12),
     );
     canvas.drawRRect(bgRect, bgPaint);
@@ -113,23 +153,20 @@ class NotificationBadge {
     canvas.drawRRect(bgRect, borderPaint);
 
     // Milestone text
-    _milestonePainter.paint(
-      canvas,
-      Offset(-_milestonePainter.width / 2, -35),
-    );
+    _milestonePainter.paint(canvas, Offset(-_milestonePainter.width / 2, -35));
 
     // Color swatch
     final swatchPaint = Paint()..color = unlockedColor;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: const Offset(-85, 8), width: 24 * s, height: 24 * s),
+        Rect.fromCenter(center: const Offset(-85, 8), width: 24, height: 24),
         const Radius.circular(4),
       ),
       swatchPaint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(center: const Offset(-85, 8), width: 24 * s, height: 24 * s),
+        Rect.fromCenter(center: const Offset(-85, 8), width: 24, height: 24),
         const Radius.circular(4),
       ),
       Paint()
@@ -139,17 +176,12 @@ class NotificationBadge {
     );
 
     // "UNLOCKED" label
-    _unlockedPainter.paint(
-      canvas,
-      Offset(-55, 0),
-    );
+    _unlockedPainter.paint(canvas, Offset(-55, 0));
 
     // Next milestone label
-    _nextPainter.paint(
-      canvas,
-      Offset(-_nextPainter.width / 2, 30),
-    );
+    _nextPainter.paint(canvas, Offset(-_nextPainter.width / 2, 30));
 
+    canvas.restore();
     canvas.restore();
   }
 
