@@ -53,9 +53,20 @@ class SandGame extends FlameGame with TapCallbacks {
   // Singleton Random instance to avoid allocations
   static final Random _random = Random();
 
-  // Batched rendering buffers
+  // Batched rendering buffers (full grid; chunk buffers mirror these for partial GPU uploads)
   late Float32List _vertices;
   late Int32List _colors;
+
+  /// Spatial chunks for partial `Vertices.raw` rebuilds (e.g. 8×10 tiles for 80×100).
+  static const int _chunkCellW = 10;
+  static const int _chunkCellH = 10;
+  late final int _chunksX;
+  late final int _chunksY;
+  late final int _chunkCount;
+  late final List<Float32List> _chunkVertices;
+  late final List<Int32List> _chunkColors;
+  late final List<Vertices?> _cachedChunkVertices;
+  late final Uint8List _chunkDirty;
 
   // Fixed timestep accumulator
   double _accumulator = 0;
@@ -119,9 +130,6 @@ class SandGame extends FlameGame with TapCallbacks {
   late Int32List _pendingColorValues;
   int _pendingColorCount = 0;
 
-  // Cached Vertices for massive render speedup
-  Vertices? _cachedVertices;
-  bool _needsVertexUpdate = true;
   final Paint _verticesPaint = Paint();
 
   // Floating score popup (single instance, reused)
@@ -162,6 +170,26 @@ class SandGame extends FlameGame with TapCallbacks {
     // Pre-allocate buffers for vertices (2 triangles per cell = 6 vertices, each with x,y)
     _vertices = Float32List(cols * rows * 12);
     _colors = Int32List(cols * rows * 6);
+
+    _chunksX = (cols + _chunkCellW - 1) ~/ _chunkCellW;
+    _chunksY = (rows + _chunkCellH - 1) ~/ _chunkCellH;
+    _chunkCount = _chunksX * _chunksY;
+    final cellsPerChunk = _chunkCellW * _chunkCellH;
+    final vPerChunk = cellsPerChunk * 12;
+    final cPerChunk = cellsPerChunk * 6;
+    _chunkVertices = List<Float32List>.generate(
+      _chunkCount,
+      (_) => Float32List(vPerChunk),
+      growable: false,
+    );
+    _chunkColors = List<Int32List>.generate(
+      _chunkCount,
+      (_) => Int32List(cPerChunk),
+      growable: false,
+    );
+    _cachedChunkVertices = List<Vertices?>.filled(_chunkCount, null);
+    _chunkDirty = Uint8List(_chunkCount);
+
     _clearMask = Uint8List(cols * rows);
     _clearingCellAnimations = Float32List(cols * rows);
     _lastAnimatedCellColors = Int32List(cols * rows);
@@ -266,8 +294,43 @@ class SandGame extends FlameGame with TapCallbacks {
       _lastBackgroundWidth = -1;
       _lastBackgroundHeight = -1;
       _backgroundPicture = null;
-      _needsVertexUpdate = true;
-      _cachedVertices = null;
+      _invalidateChunkVertexCaches();
+    }
+  }
+
+  void _invalidateChunkVertexCaches() {
+    for (int i = 0; i < _chunkCount; i++) {
+      _cachedChunkVertices[i] = null;
+      _chunkDirty[i] = 1;
+    }
+  }
+
+  void _copyFullGridGeometryAndColorsToChunks() {
+    for (int cy = 0; cy < _chunksY; cy++) {
+      for (int cx = 0; cx < _chunksX; cx++) {
+        final cid = cy * _chunksX + cx;
+        final cv = _chunkVertices[cid];
+        final cc = _chunkColors[cid];
+        final x0 = cx * _chunkCellW;
+        final y0 = cy * _chunkCellH;
+        int vi = 0;
+        int ci = 0;
+        for (int yy = 0; yy < _chunkCellH; yy++) {
+          for (int xx = 0; xx < _chunkCellW; xx++) {
+            final x = x0 + xx;
+            final y = y0 + yy;
+            final idx = y * cols + x;
+            final vb = idx * 12;
+            final cb = idx * 6;
+            for (int k = 0; k < 12; k++) {
+              cv[vi++] = _vertices[vb + k];
+            }
+            for (int k = 0; k < 6; k++) {
+              cc[ci++] = _colors[cb + k];
+            }
+          }
+        }
+      }
     }
   }
 
@@ -298,48 +361,50 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     }
 
-    _needsVertexUpdate = true;
-    _cachedVertices = null; // force full rebuild
+    _copyFullGridGeometryAndColorsToChunks();
+    _invalidateChunkVertexCaches();
   }
 
-  void _setCellColorInVertexBuffer(int cellIndex, int color) {
+  /// Writes display color for one cell into global and chunk buffers; marks the chunk dirty.
+  void _writeCellColor(int cellIndex, int color) {
     if (cellIndex < 0 || cellIndex >= cols * rows) return;
 
     final colorBase = cellIndex * 6;
+    if (_colors[colorBase] == color) return;
 
-    // Only update if color actually changed to avoid unnecessary vertex rebuilds
-    if (_colors[colorBase] != color) {
-      // Direct assignment instead of loop for better performance
-      _colors[colorBase] = color;
-      _colors[colorBase + 1] = color;
-      _colors[colorBase + 2] = color;
-      _colors[colorBase + 3] = color;
-      _colors[colorBase + 4] = color;
-      _colors[colorBase + 5] = color;
-      _needsVertexUpdate = true;
-    }
+    _colors[colorBase] = color;
+    _colors[colorBase + 1] = color;
+    _colors[colorBase + 2] = color;
+    _colors[colorBase + 3] = color;
+    _colors[colorBase + 4] = color;
+    _colors[colorBase + 5] = color;
+
+    final x = cellIndex % cols;
+    final y = cellIndex ~/ cols;
+    final cid = (y ~/ _chunkCellH) * _chunksX + (x ~/ _chunkCellW);
+    final ox = x - (x ~/ _chunkCellW) * _chunkCellW;
+    final oy = y - (y ~/ _chunkCellH) * _chunkCellH;
+    final li = oy * _chunkCellW + ox;
+    final localBase = li * 6;
+    final chunkCol = _chunkColors[cid];
+    chunkCol[localBase] = color;
+    chunkCol[localBase + 1] = color;
+    chunkCol[localBase + 2] = color;
+    chunkCol[localBase + 3] = color;
+    chunkCol[localBase + 4] = color;
+    chunkCol[localBase + 5] = color;
+
+    _chunkDirty[cid] = 1;
+  }
+
+  void _setCellColorInVertexBuffer(int cellIndex, int color) {
+    _writeCellColor(cellIndex, color);
   }
 
   /// Sets colors for multiple cells at once to reduce vertex update overhead
   void _setMultipleCellColorsInVertexBuffer(List<int> cellIndices, int color) {
-    bool needsUpdate = false;
-
     for (final cellIndex in cellIndices) {
-      if (cellIndex < 0 || cellIndex >= cols * rows) continue;
-
-      final colorBase = cellIndex * 6;
-
-      // Only update if color actually changed
-      if (_colors[colorBase] != color) {
-        for (int j = 0; j < 6; j++) {
-          _colors[colorBase + j] = color;
-        }
-        needsUpdate = true;
-      }
-    }
-
-    if (needsUpdate) {
-      _needsVertexUpdate = true;
+      _writeCellColor(cellIndex, color);
     }
   }
 
@@ -349,28 +414,8 @@ class SandGame extends FlameGame with TapCallbacks {
     Int32List colors,
     int count,
   ) {
-    bool needsUpdate = false;
-
     for (int i = 0; i < count; i++) {
-      final cellIndex = cellIndices[i];
-      if (cellIndex < 0 || cellIndex >= cols * rows) continue;
-
-      final color = colors[i];
-      final colorBase = cellIndex * 6;
-
-      if (_colors[colorBase] != color) {
-        _colors[colorBase] = color;
-        _colors[colorBase + 1] = color;
-        _colors[colorBase + 2] = color;
-        _colors[colorBase + 3] = color;
-        _colors[colorBase + 4] = color;
-        _colors[colorBase + 5] = color;
-        needsUpdate = true;
-      }
-    }
-
-    if (needsUpdate) {
-      _needsVertexUpdate = true;
+      _writeCellColor(cellIndices[i], colors[i]);
     }
   }
 
@@ -789,20 +834,27 @@ class SandGame extends FlameGame with TapCallbacks {
       _updateClearingAnimationVertexColors();
     }
 
-    // ←←← THIS IS THE KEY OPTIMIZATION ←←←
-    if (_needsVertexUpdate || _cachedVertices == null) {
-      _cachedVertices = _perfMeter.measure(
-        'vertices_rebuild',
-        () => Vertices.raw(VertexMode.triangles, _vertices, colors: _colors),
-      );
-      _needsVertexUpdate = false;
-    }
+    _perfMeter.measure('vertices_rebuild', () {
+      for (int i = 0; i < _chunkCount; i++) {
+        if (_chunkDirty[i] != 0 || _cachedChunkVertices[i] == null) {
+          _cachedChunkVertices[i] = Vertices.raw(
+            VertexMode.triangles,
+            _chunkVertices[i],
+            colors: _chunkColors[i],
+          );
+          _chunkDirty[i] = 0;
+        }
+      }
+    });
 
-    _perfMeter.measure(
-      'draw_vertices',
-      () =>
-          canvas.drawVertices(_cachedVertices!, BlendMode.src, _verticesPaint),
-    );
+    _perfMeter.measure('draw_vertices', () {
+      for (int i = 0; i < _chunkCount; i++) {
+        final v = _cachedChunkVertices[i];
+        if (v != null) {
+          canvas.drawVertices(v, BlendMode.src, _verticesPaint);
+        }
+      }
+    });
 
     _drawPlayAreaBorder(canvas);
 
@@ -1119,8 +1171,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _colors.fillRange(0, _colors.length, 0);
     _updateVertexPositions();
 
-    _needsVertexUpdate = true;
-    _cachedVertices = null;
+    _invalidateChunkVertexCaches();
     _activeFloatingScore = null;
     _invalidateFloatingScorePainter();
     _shakeIntensity = 0;
