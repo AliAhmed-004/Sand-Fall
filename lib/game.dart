@@ -22,9 +22,9 @@ import 'package:sandfall/world.dart';
 
 class SandGame extends FlameGame with TapCallbacks {
   // Temporary performance-first profile: keep mechanics, disable costly visuals.
-  static const bool _enableClearAnimation = false;
+  static const bool _enableClearAnimation = true;
   static const bool _enableFloatingScores = true;
-  static const bool _enableScreenShake = false;
+  static const bool _enableScreenShake = true;
   static const bool _enableConfetti = false;
   static const bool _enableMilestoneBadge = true;
 
