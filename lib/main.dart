@@ -45,7 +45,7 @@ class SandCrush extends StatelessWidget {
               HudOverlay(game: game as SandGame),
           GameConfig.pauseOverlay: (context, game) =>
               PauseOverlay(game: game as SandGame),
-            GameConfig.tutorialOverlay: (context, game) =>
+          GameConfig.tutorialOverlay: (context, game) =>
               TutorialOverlay(game: game as SandGame),
           GameConfig.celebrationOverlay: (context, game) =>
               CelebrationOverlay(game: game as SandGame),
