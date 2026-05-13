@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
+import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
@@ -69,6 +70,28 @@ class GameOverOverlay extends StatelessWidget {
               _ScoreRow(label: 'BEST', value: highScore),
 
               const SizedBox(height: 24),
+
+              MenuButton.secondary(
+                label: 'LEADERBOARDS',
+                onPressed: () async {
+                  final opened =
+                      await PlayGamesService.instance.showLeaderboards();
+
+                  if (!context.mounted) {
+                    return;
+                  }
+
+                  if (!opened) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Play Games leaderboards are not available yet.'),
+                      ),
+                    );
+                  }
+                },
+              ),
+
+              const SizedBox(height: 12),
 
               Divider(color: SandColors.deepSand.withAlpha(100), height: 1),
 

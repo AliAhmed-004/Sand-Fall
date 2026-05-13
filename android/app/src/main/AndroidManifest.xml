@@ -3,6 +3,9 @@
         android:label="Sand Fall"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
+    <meta-data
+        android:name="com.google.android.gms.games.APP_ID"
+        android:value="@string/app_id" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

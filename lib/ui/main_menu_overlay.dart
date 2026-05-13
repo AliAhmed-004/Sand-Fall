@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
+import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
@@ -43,6 +44,28 @@ class MainMenuOverlay extends StatelessWidget {
                   _HighScoreCard(score: highScore),
 
                   const SizedBox(height: 48),
+
+                  MenuButton.secondary(
+                    label: 'LEADERBOARDS',
+                    onPressed: () async {
+                      final opened =
+                          await PlayGamesService.instance.showLeaderboards();
+
+                      if (!context.mounted) {
+                        return;
+                      }
+
+                      if (!opened) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Play Games leaderboards are not available yet.'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+
+                  const SizedBox(height: 12),
 
                   if (hasSavedGame) ...[
                     MenuButton(

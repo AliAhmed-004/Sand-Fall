@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
+import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/celebration_overlay.dart';
@@ -20,6 +21,9 @@ void main() async {
   await Hive.initFlutter();
   await HighScoreService.instance.initialize();
   await SaveGameService.instance.initialize();
+  print('[App] Initializing Play Games...');
+  await PlayGamesService.instance.initialize();
+  print('[App] Initialization complete.');
 
   Flame.device.fullScreen();
 

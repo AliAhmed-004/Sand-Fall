@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 import 'dart:ui' as ui;
+import 'dart:async';
 
 import 'package:flame/events.dart';
 import 'package:flame/extensions.dart';
@@ -15,6 +16,7 @@ import 'package:sandfall/models/notification_badge.dart';
 import 'package:sandfall/services/difficulty_service.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/milestone_service.dart';
+import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
@@ -560,11 +562,20 @@ class SandGame extends FlameGame with TapCallbacks {
     if (sandWorld.isGameOver) {
       if (!_isGameOverDetected) {
         _isGameOverDetected = true;
+        final finalScore = ScoringService.instance.currentScore;
+        print('[Game] Game over detected! Final score: $finalScore');
 
         // Save high score if current score is higher
-        HighScoreService.instance.saveHighScoreIfHigher(
-          ScoringService.instance.currentScore,
-        );
+        unawaited(() async {
+          try {
+            print('[Game] Saving high score...');
+            await HighScoreService.instance.saveHighScoreIfHigher(finalScore);
+            print('[Game] High score saved. Submitting to Play Games...');
+            await PlayGamesService.instance.submitScore(finalScore);
+          } catch (_) {
+            // Local persistence and Play Games submission are best-effort.
+          }
+        }());
 
         // Delete saved game
         SaveGameService.instance.deleteSavedGame();

@@ -6,6 +6,10 @@ class GameConfig {
   static final String celebrationOverlay = 'CelebrationOverlay';
   static final String gameOverOverlay = 'GameOverOverlay';
 
+  // Play Games leaderboards
+  static const String playGamesAndroidLeaderboardId = 'CgkI4sqYhPwLEAIQAQ';
+  static const String playGamesIOSLeaderboardId = '';
+
   // Hive box names
   static final String gameStateBox = 'game_state_box';
 
