@@ -33,6 +33,14 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Environment and release-signing files
+.env
+.env.*
+/android/local.properties
+/android/key.properties
+/android/*.jks
+/android/*.keystore
+
 # Symbolication related
 app.*.symbols
 

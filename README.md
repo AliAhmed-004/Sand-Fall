@@ -1,70 +1,65 @@
 # Sand Crush
 
-Sand Crush is a small sand-physics puzzle game built with Flutter and Flame.
-You place the next “chunk” of sand onto a grid, let it settle under gravity,
-and score by creating same-color bridges that span from the left edge to the
-right edge.
+Sand Crush is a Flutter and Flame puzzle game about placing sand, letting the board settle, and creating same-color bridges that span left to right.
+
+## Overview
+
+The game combines cluster-based gravity, batched rendering, and sparse save data to keep the experience fast while still allowing the board to fragment, settle, and clear in interesting ways.
+
+## Highlights
+
+- Physics-driven puzzle loop with cluster-based gravity and fragmentation.
+- Bridge clearing that rewards left-to-right connections of the same color.
+- Batched vertex rendering for efficient drawing on a large grid.
+- Local save system using Hive for high score and resume support.
+- Performance profiling notes and optimization work documented in `docs/performance_optimization.md`.
+
+## Tech Stack
+
+- Flutter / Dart
+- Flame
+- Hive
+- Android, iOS, Linux, macOS, Windows, and web targets supported by Flutter
 
 ## Gameplay
 
-- Place pieces by tapping/clicking on the grid.
-- Pieces fall with simple cluster-based gravity and can break into grains.
-- When the board becomes stable, any connected bridge of a color that spans
-	**left → right** clears.
-- Score increases from placing pieces and clearing bridges; clears can chain
-	into combos while the board keeps becoming unstable/stable.
-- Difficulty ramps up by unlocking additional colors as you hit score
-	milestones.
+- Tap or click a cell to place the next sand chunk.
+- Pieces fall under cluster-based gravity and can break into smaller grains.
+- Once the board stabilizes, a connected same-color bridge that reaches from the left edge to the right edge clears.
+- Score comes from placements, clears, and combo bonuses.
+- New colors unlock as score milestones are reached.
 
-### Controls
+## Controls
 
-- **Tap / click** a cell to place the next piece (only when the board is
-	stable).
-- Use the **Pause** button in the HUD to pause/resume or restart.
+- Tap or click a cell to place the next piece when the board is stable.
+- Use the Pause button in the HUD to pause, resume, or restart.
 
-## Scoring & difficulty (high level)
+## Save Data
 
-- **Placement points** are awarded for every successful placement.
-- **Clear points** are awarded based on the size of the cleared bridge and a
-	combo bonus.
-- **Milestones** occur every **25,000** points; the game starts with **3**
-	colors available and unlocks **+1 color per milestone** (up to 6).
+This project uses Hive for local persistence.
 
-## Game over
+- High score is stored across sessions.
+- Saved game state is stored periodically so the main menu can offer Continue.
 
-The game ends when sand reaches the **top 10% of the grid**. A red horizontal
-line is rendered to show the threshold.
+## Local Setup
 
-## Save data
+### Requirements
 
-This project uses Hive for local persistence:
+- Flutter SDK matching the version constraint in `pubspec.yaml`.
 
-- **High score** is stored across sessions.
-- **Saved game** (grid + score) is stored periodically (currently every 5
-	successful placements). If a save exists, the main menu shows **Continue
-	Game**.
-
-## Run it
-
-### Prerequisites
-
-- Flutter SDK (Dart SDK version in `pubspec.yaml` is `^3.11.4`)
-
-### Commands
-
-Fetch dependencies:
+### Install
 
 ```bash
 flutter pub get
 ```
 
-Run on a device/emulator:
+### Run
 
 ```bash
 flutter run
 ```
 
-Run on a specific platform (examples):
+### Platform examples
 
 ```bash
 flutter run -d chrome
@@ -74,26 +69,30 @@ flutter run -d android
 
 ## Development
 
-Static analysis:
+### Static analysis
 
 ```bash
 flutter analyze
 ```
 
-Tests:
+### Tests
 
 ```bash
 flutter test
 ```
 
-## Code map
+## Project Structure
 
-- `lib/main.dart` — app bootstrap, Hive init, Flame `GameWidget` + overlays
-- `lib/game.dart` — main game loop, input, rendering, save/load hooks
-- `lib/world.dart` — grid buffers, clusters/physics, bridge clear + game over
-- `lib/services/` — scoring, milestones/difficulty, persistence
-- `lib/ui/` — Flutter overlays (main menu, HUD, pause, celebration, game over)
+- `lib/main.dart` - app bootstrap, Hive initialization, and Flame overlay setup
+- `lib/game.dart` - main game loop, rendering, input, and save/load orchestration
+- `lib/world.dart` - grid buffers, physics, bridge clearing, and game-over logic
+- `lib/services/` - scoring, difficulty, milestone, and persistence services
+- `lib/ui/` - menu, HUD, pause, celebration, and game-over overlays
 
-## Performance notes
+## Release Builds
 
-See `docs/performance_optimization.md` for profiling notes and optimizations.
+Android release signing is configured from a local `android/key.properties` file and private keystore. Those files are intentionally not committed.
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for details.

@@ -15,18 +15,27 @@ if (keyPropertiesFile.exists()) {
   keyProperties.load(FileInputStream(keyPropertiesFile))
 }
 
+val releaseSigningConfigured = listOf(
+    "storeFile",
+    "storePassword",
+    "keyAlias",
+    "keyPassword",
+).all { keyProperties.containsKey(it) }
+
 android {
     namespace = "com.spudbyte.sandfall"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
     signingConfigs {
-        create("release") {
-            val storeFilePath = keyProperties["storeFile"] as String
+        if (releaseSigningConfigured) {
+            create("release") {
+                val storeFilePath = keyProperties["storeFile"] as String
 
-            storeFile = file(storeFilePath)
-            storePassword = keyProperties["storePassword"] as String
-            keyAlias = keyProperties["keyAlias"] as String
-            keyPassword = keyProperties["keyPassword"] as String
+                storeFile = file(storeFilePath)
+                storePassword = keyProperties["storePassword"] as String
+                keyAlias = keyProperties["keyAlias"] as String
+                keyPassword = keyProperties["keyPassword"] as String
+            }
         }
     }
 
@@ -52,7 +61,9 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
         }
