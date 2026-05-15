@@ -1,6 +1,16 @@
 # Sand Crush
 
-Sand Crush is a Flutter and Flame puzzle game about placing sand, letting the board settle, and creating same-color bridges that span left to right.
+> Sand Crush is a Flutter and Flame puzzle game about placing sand, letting the board settle, and creating same-color bridges that span left to right.
+
+## Screenshots
+
+A selection of in-game screenshots:
+
+| | | |
+|---|---|---|
+| ![gameplay](assets/screenshots/gameplay.jpg) | ![gameplay 2](assets/screenshots/gameplay_2.jpg) | ![main menu](assets/screenshots/main_menu.jpg) |
+| ![game over](assets/screenshots/game_over.jpg) | ![leaderboards](assets/screenshots/leaderboards.jpg) | ![tutorial](assets/screenshots/tutorial.jpg) |
+
 
 ## Overview
 
