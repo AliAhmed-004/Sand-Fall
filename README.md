@@ -1,6 +1,6 @@
 # Sand Fall
 
-> Sand Crush is a Flutter and Flame puzzle game about placing sand, letting the board settle, and creating same-color bridges that span left to right.
+> Sand Fall is a Flutter and Flame puzzle game about placing sand, letting the board settle, and creating same-color bridges that span left to right.
 
 ## Screenshots
 
