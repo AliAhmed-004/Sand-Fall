@@ -130,7 +130,7 @@ class NotificationBadge {
         width: badgeWidth + 60,
         height: badgeHeight + 40,
       ),
-      Paint()..color = Colors.white.withOpacity(opacity),
+      Paint()..color = Colors.white.withValues(alpha: opacity),
     );
 
     // Badge background

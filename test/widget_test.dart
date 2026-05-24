@@ -20,7 +20,7 @@ void main() {
     final int testY = rows - 1; // bottom row
     final int idx = testY * cols + testX;
 
-    world.gridColorBuffer[idx] = const Color(0xFF0000FF).value; // arbitrary color
+    world.gridColorBuffer[idx] = const Color(0xFF0000FF).toARGB32(); // arbitrary color
     world.baseColorIdBuffer[idx] = 1; // valid base color id
 
     // Rebuild clusters from the raw buffers (similar to load flow)
