@@ -127,6 +127,17 @@ class SandGame extends FlameGame with TapCallbacks {
 
   bool isGameStarted = false;
   bool _isGameOverDetected = false;
+  bool _isGameOverSweepActive = false;
+  bool _isGameOverFinalized = false;
+  double _gameOverSweepElapsed = 0;
+  double _gameOverSweepY = 0;
+  int _gameOverSweepLastClearedRow = -1;
+  double _thresholdWarningElapsed = 0;
+  static const int _thresholdWarningWindowRows = 18;
+  static const double _gameOverBreachHoldDuration = 0.24;
+  static const double _gameOverSweepFlashDuration = 0.11;
+  static const double _gameOverSweepMoveDuration = 0.75;
+  static const double _gameOverBreachTextFadeDuration = 0.45;
 
   // Clearing animation tracking
   static const double _clearFlashDuration = 0.05; // 50ms glow flash
@@ -171,6 +182,10 @@ class SandGame extends FlameGame with TapCallbacks {
     ..color = Colors.red.withAlpha(204)
     ..strokeWidth = 3
     ..style = PaintingStyle.stroke;
+  final Paint _gameOverSweepLinePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round;
+  final Paint _gameOverSweepGlowPaint = Paint()..style = PaintingStyle.fill;
   bool _needsGameOverEvaluation = false;
   final _PerfMeter _perfMeter = _PerfMeter('SandGame');
 
@@ -466,6 +481,7 @@ class SandGame extends FlameGame with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (_cellsToClears.isNotEmpty) return;
+    if (_isGameOverSweepActive) return;
     if (!sandWorld.isStable) return;
     if (sandWorld.isGameOver) return;
 
@@ -559,6 +575,8 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     }
 
+    _thresholdWarningElapsed += dt;
+
     // Update clearing animation if in progress
     if (_cellsToClears.isNotEmpty) {
       _clearingElapsedTime += dt;
@@ -588,33 +606,19 @@ class SandGame extends FlameGame with TapCallbacks {
       return;
     }
 
+    // Run the game-over sweep transition before showing the overlay.
+    if (_isGameOverSweepActive) {
+      _updateGameOverSweep(dt);
+      _wasStableLastFrame = sandWorld.isStable;
+      _perfMeter.endFrame(updateFrameSw, 'update_total');
+      return;
+    }
+
     // Pause game on game over
     if (sandWorld.isGameOver) {
       if (!_isGameOverDetected) {
         _isGameOverDetected = true;
-        final finalScore = ScoringService.instance.currentScore;
-        print('[Game] Game over detected! Final score: $finalScore');
-
-        // Save high score if current score is higher
-        unawaited(() async {
-          try {
-            print('[Game] Saving high score...');
-            await HighScoreService.instance.saveHighScoreIfHigher(finalScore);
-            print('[Game] High score saved. Submitting to Play Games...');
-            await PlayGamesService.instance.submitScore(finalScore);
-          } catch (_) {
-            // Local persistence and Play Games submission are best-effort.
-          }
-        }());
-
-        // Delete saved game
-        SaveGameService.instance.deleteSavedGame();
-
-        // Pause the Engine
-        pauseEngine();
-
-        // Show game over overlay
-        overlays.add(GameConfig.gameOverOverlay);
+        _startGameOverSweep();
       }
       _perfMeter.endFrame(updateFrameSw, 'update_total');
       return;
@@ -768,7 +772,8 @@ class SandGame extends FlameGame with TapCallbacks {
             scoreFontSize: FloatingFeedbackConfig.comboFeedbackScoreFontSize,
             praiseFontSize: FloatingFeedbackConfig.comboFeedbackPraiseFontSize,
             lineGap: FloatingFeedbackConfig.comboFeedbackLineGap,
-            shadowBlurRadius: FloatingFeedbackConfig.comboPraiseShadowBlurRadius,
+            shadowBlurRadius:
+                FloatingFeedbackConfig.comboPraiseShadowBlurRadius,
             shadowOpacity: FloatingFeedbackConfig.comboPraiseShadowOpacity,
             praiseLetterSpacing:
                 FloatingFeedbackConfig.comboFeedbackPraiseLetterSpacing,
@@ -1093,14 +1098,238 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   void _drawGameOverThreshold(Canvas canvas) {
+    if (_isGameOverSweepActive) {
+      final isFlashing = _gameOverSweepElapsed < _gameOverSweepFlashDuration;
+      final flashProgress =
+          (_gameOverSweepElapsed / _gameOverSweepFlashDuration).clamp(0.0, 1.0);
+      final pulse = 0.5 + 0.5 * sin(_gameOverSweepElapsed * 50.0);
+
+      final glowAlpha = isFlashing
+          ? (150 + (80 * (1.0 - flashProgress) * pulse)).toInt().clamp(0, 255)
+          : 95;
+      final glowHalfHeight = isFlashing
+          ? cellSize * (1.1 + 0.35 * (1.0 - flashProgress))
+          : cellSize * 0.8;
+
+      _gameOverSweepGlowPaint.color = SandColors.warmAccent.withAlpha(
+        glowAlpha,
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(
+          gridOffset.dx,
+          _gameOverSweepY - glowHalfHeight,
+          gridOffset.dx + cols * cellSize,
+          _gameOverSweepY + glowHalfHeight,
+        ),
+        _gameOverSweepGlowPaint,
+      );
+
+      final lineAlpha = isFlashing
+          ? (210 + (45 * pulse)).toInt().clamp(0, 255)
+          : 225;
+      _gameOverSweepLinePaint
+        ..color = Colors.redAccent.withAlpha(lineAlpha)
+        ..strokeWidth = isFlashing ? (4.0 + 3.0 * (1.0 - flashProgress)) : 4.0;
+
+      canvas.drawLine(
+        Offset(gridOffset.dx, _gameOverSweepY),
+        Offset(gridOffset.dx + cols * cellSize, _gameOverSweepY),
+        _gameOverSweepLinePaint,
+      );
+
+      final textFadeStart =
+          _gameOverBreachHoldDuration + _gameOverSweepMoveDuration;
+      double textOpacity = 1.0;
+      if (_gameOverSweepElapsed > textFadeStart) {
+        final fadeProgress =
+            ((_gameOverSweepElapsed - textFadeStart) /
+                    _gameOverBreachTextFadeDuration)
+                .clamp(0.0, 1.0);
+        textOpacity = 1.0 - fadeProgress;
+      }
+
+      if (textOpacity > 0.01) {
+        final sweepProgress =
+            ((_gameOverSweepElapsed - _gameOverBreachHoldDuration) /
+                    _gameOverSweepMoveDuration)
+                .clamp(0.0, 1.0);
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: 'THRESHOLD BREACHED',
+            style: TextStyle(
+              color: Colors.white.withAlpha((235 * textOpacity).toInt()),
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.6,
+              fontFamily: 'monospace',
+              shadows: const [
+                Shadow(
+                  color: Colors.black87,
+                  blurRadius: 6,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        final textX = gridOffset.dx + (cols * cellSize - textPainter.width) / 2;
+        final textY = _gameOverSweepY - 30 - 8 * sweepProgress;
+        textPainter.paint(canvas, Offset(textX, textY));
+      }
+
+      return;
+    }
+
     final thresholdY =
         gridOffset.dy + sandWorld.gameOverThresholdRow * cellSize;
+    final warningStrength = _computeThresholdWarningStrength();
+
+    if (warningStrength > 0) {
+      final pulseHz = 0.35 + (0.8 * warningStrength);
+      final pulse =
+          0.5 + 0.5 * sin(2 * pi * pulseHz * _thresholdWarningElapsed);
+      final pulseMix = 0.45 + (0.55 * pulse);
+
+      final dynamicAlpha = (140 + (85 * warningStrength * pulseMix))
+          .toInt()
+          .clamp(0, 255);
+      _gameOverThresholdPaint
+        ..color = Colors.redAccent.withAlpha(dynamicAlpha)
+        ..strokeWidth = 3.0 + (1.8 * warningStrength * pulseMix);
+    } else {
+      _gameOverThresholdPaint
+        ..color = Colors.red.withAlpha(204)
+        ..strokeWidth = 3;
+    }
 
     canvas.drawLine(
       Offset(gridOffset.dx, thresholdY),
       Offset(gridOffset.dx + cols * cellSize, thresholdY),
       _gameOverThresholdPaint,
     );
+  }
+
+  double _computeThresholdWarningStrength() {
+    final topRow = _findTopOccupiedRow();
+    if (topRow == null) {
+      return 0.0;
+    }
+
+    final thresholdRow = sandWorld.gameOverThresholdRow;
+    final distanceRows = thresholdRow - topRow;
+    final normalized = 1.0 - (distanceRows / _thresholdWarningWindowRows);
+    return normalized.clamp(0.0, 1.0);
+  }
+
+  int? _findTopOccupiedRow() {
+    final buffer = sandWorld.gridColorBuffer;
+    for (int y = 0; y < rows; y++) {
+      final rowBase = y * cols;
+      for (int x = 0; x < cols; x++) {
+        if (buffer[rowBase + x] != 0) {
+          return y;
+        }
+      }
+    }
+    return null;
+  }
+
+  void _startGameOverSweep() {
+    final thresholdY =
+        gridOffset.dy + sandWorld.gameOverThresholdRow * cellSize;
+    _isGameOverSweepActive = true;
+    _isGameOverFinalized = false;
+    _gameOverSweepElapsed = 0;
+    _gameOverSweepY = thresholdY;
+    _gameOverSweepLastClearedRow = -1;
+
+    if (_enableScreenShake) {
+      _shakeIntensity = 5;
+      _shakeElapsed = 0;
+    }
+  }
+
+  void _updateGameOverSweep(double dt) {
+    _gameOverSweepElapsed += dt;
+
+    final sweepStartY =
+        gridOffset.dy + sandWorld.gameOverThresholdRow * cellSize;
+    final sweepEndY = gridOffset.dy + rows * cellSize;
+    final textFadeStart =
+        _gameOverBreachHoldDuration + _gameOverSweepMoveDuration;
+    final totalSweepDuration = textFadeStart + _gameOverBreachTextFadeDuration;
+
+    if (_gameOverSweepElapsed <= _gameOverBreachHoldDuration) {
+      _gameOverSweepY = sweepStartY;
+      return;
+    }
+
+    final moveProgress =
+        ((_gameOverSweepElapsed - _gameOverBreachHoldDuration) /
+                _gameOverSweepMoveDuration)
+            .clamp(0.0, 1.0);
+    final eased = moveProgress * moveProgress * moveProgress;
+    _gameOverSweepY = lerpDouble(sweepStartY, sweepEndY, eased) ?? sweepEndY;
+
+    _clearRowsBehindGameOverSweepLine();
+
+    if (_gameOverSweepElapsed >= totalSweepDuration) {
+      _finalizeGameOverTransition();
+    }
+  }
+
+  void _clearRowsBehindGameOverSweepLine() {
+    final rowBoundary = ((_gameOverSweepY - gridOffset.dy) / cellSize)
+        .floor()
+        .clamp(0, rows);
+    final clearUntilRow = rowBoundary - 1;
+
+    if (clearUntilRow <= _gameOverSweepLastClearedRow) {
+      return;
+    }
+
+    final startRow = _gameOverSweepLastClearedRow + 1;
+    for (int y = startRow; y <= clearUntilRow; y++) {
+      final rowBase = y * cols;
+      for (int x = 0; x < cols; x++) {
+        _writeCellColor(rowBase + x, 0);
+      }
+    }
+
+    _gameOverSweepLastClearedRow = clearUntilRow;
+  }
+
+  void _finalizeGameOverTransition() {
+    if (_isGameOverFinalized) {
+      return;
+    }
+    _isGameOverFinalized = true;
+    _isGameOverSweepActive = false;
+
+    final allCellCount = cols * rows;
+    for (int i = 0; i < allCellCount; i++) {
+      _writeCellColor(i, 0);
+    }
+
+    final finalScore = ScoringService.instance.currentScore;
+    print('[Game] Game over detected! Final score: $finalScore');
+
+    unawaited(() async {
+      try {
+        print('[Game] Saving high score...');
+        await HighScoreService.instance.saveHighScoreIfHigher(finalScore);
+        print('[Game] High score saved. Submitting to Play Games...');
+        await PlayGamesService.instance.submitScore(finalScore);
+      } catch (_) {
+        // Local persistence and Play Games submission are best-effort.
+      }
+    }());
+
+    SaveGameService.instance.deleteSavedGame();
+    pauseEngine();
+    overlays.add(GameConfig.gameOverOverlay);
   }
 
   void _drawPlayAreaBorder(Canvas canvas) {
@@ -1125,7 +1354,12 @@ class SandGame extends FlameGame with TapCallbacks {
     canvas.save();
     canvas.translate(centerX, centerY);
 
-    final bgRect = Rect.fromLTWH(-previewSize / 2, -previewSize / 2, previewSize, previewSize);
+    final bgRect = Rect.fromLTWH(
+      -previewSize / 2,
+      -previewSize / 2,
+      previewSize,
+      previewSize,
+    );
 
     canvas.drawRect(bgRect, Paint()..color = SandColors.previewBoxDark);
 
@@ -1244,6 +1478,12 @@ class SandGame extends FlameGame with TapCallbacks {
     _placementsSinceLastSave = 0;
     _hasPendingAutosave = false;
     _isAutosaveInFlight = false;
+    _isGameOverSweepActive = false;
+    _isGameOverFinalized = false;
+    _gameOverSweepElapsed = 0;
+    _gameOverSweepY = 0;
+    _gameOverSweepLastClearedRow = -1;
+    _thresholdWarningElapsed = 0;
     _cellsToClears.clear();
     _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
     _clearingElapsedTime = 0;
@@ -1347,6 +1587,12 @@ class SandGame extends FlameGame with TapCallbacks {
       _placementsSinceLastSave = 0;
       _hasPendingAutosave = false;
       _isAutosaveInFlight = false;
+      _isGameOverSweepActive = false;
+      _isGameOverFinalized = false;
+      _gameOverSweepElapsed = 0;
+      _gameOverSweepY = 0;
+      _gameOverSweepLastClearedRow = -1;
+      _thresholdWarningElapsed = 0;
       _cellsToClears.clear();
       _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
       _clearingElapsedTime = 0;
