@@ -10,7 +10,7 @@ enum TutorialCoachPhase {
 }
 
 class TutorialCoachController extends ChangeNotifier {
-  static const Duration _bridgeClearedDuration = Duration(milliseconds: 5000);
+  static const Duration _bridgeClearedDuration = Duration(milliseconds: 4000);
   static const Duration _milestoneReminderDuration = Duration(milliseconds: 5000);
   static const Duration _gameOverReminderDuration = Duration(milliseconds: 5000);
 
@@ -30,7 +30,7 @@ class TutorialCoachController extends ChangeNotifier {
       case TutorialCoachPhase.complete:
         return '';
       case TutorialCoachPhase.intro:
-        return 'PLAY TUTORIAL';
+        return 'START PLACING!';
       case TutorialCoachPhase.bridgeCleared:
         return 'NICE';
       case TutorialCoachPhase.milestoneReminder:
@@ -87,6 +87,7 @@ class TutorialCoachController extends ChangeNotifier {
     }
 
     _phaseElapsed += dt;
+    
 
     if (_phase == TutorialCoachPhase.bridgeCleared &&
         _phaseElapsed >= _bridgeClearedDuration.inMicroseconds / 1000000.0) {

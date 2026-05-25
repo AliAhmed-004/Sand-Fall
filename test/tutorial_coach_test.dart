@@ -27,13 +27,13 @@ void main() {
       expect(coach.forcedColor, isNull);
       expect(coach.message, 'Clearing a bridge awards bonus points.');
 
-      coach.update(4.1);
+      coach.update(4.5);
       expect(coach.phase, TutorialCoachPhase.milestoneReminder);
       expect(coach.message, 'Reach the next milestone for new colors and more difficulty.');
-      coach.update(5.1);
+      coach.update(5.5);
       expect(coach.phase, TutorialCoachPhase.gameOverReminder);
       expect(coach.message, 'If the pile reaches the top threshold, the game ends.');
-      coach.update(5.1);
+      coach.update(5.5);
       expect(coach.phase, TutorialCoachPhase.complete);
       expect(coach.isActive, isFalse);
       expect(coach.message, isEmpty);
