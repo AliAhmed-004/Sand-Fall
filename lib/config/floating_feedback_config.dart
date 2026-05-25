@@ -17,6 +17,19 @@ class FloatingFeedbackConfig {
   static const double comboFeedbackPraiseFontSize = 30.0;
   static const double comboFeedbackScoreLetterSpacing = 0.4;
   static const double comboFeedbackPraiseLetterSpacing = 1.6;
+  static const double comboFeedbackHitStopDuration = 0.055;
+  static const double comboFeedbackBounceDuration = 0.22;
+  static const double comboFeedbackBounceAmount = 0.28;
+  static const double comboFeedbackSparkStartRadius = 16.0;
+  static const double comboFeedbackSparkMinSpeed = 65.0;
+  static const double comboFeedbackSparkMaxSpeed = 145.0;
+  static const double comboFeedbackSparkGravity = 55.0;
+  static const double comboFeedbackSparkDrag = 0.92;
+  static const double comboFeedbackSparkSize = 2.4;
+  static const double comboFeedbackSparkGlowSize = 6.5;
+  static const double comboFeedbackSparkLifetime = 0.48;
+  static const int comboFeedbackSparkBaseCount = 7;
+  static const int comboFeedbackSparkBonusPerTier = 3;
   static const double comboPraiseShadowBlurRadius = 8.0;
   static const double comboPraiseShadowOpacity = 0.45;
 
@@ -33,6 +46,9 @@ class FloatingFeedbackConfig {
   };
 
   static const Color comboFeedbackScoreColor = Colors.amber;
+  static const Color comboFeedbackSparkColor = Color(0xFFFFD54F);
+  static const Color comboFeedbackSparkColorAlt = Color(0xFFFF8A65);
+  static const Color comboFeedbackSparkColorHigh = Color(0xFF8EECFF);
 
   static int normalizeComboTier(int comboCount) {
     if (comboCount <= 1) {

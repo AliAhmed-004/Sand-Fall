@@ -744,6 +744,7 @@ class SandGame extends FlameGame with TapCallbacks {
                 FloatingFeedbackConfig.comboFeedbackPraiseLetterSpacing,
             scoreLetterSpacing:
                 FloatingFeedbackConfig.comboFeedbackScoreLetterSpacing,
+            comboTier: praise.tier,
           );
         }
 
