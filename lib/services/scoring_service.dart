@@ -23,6 +23,7 @@ class ScoringService {
   ValueNotifier<int> get scoreNotifier => _scoreNotifier;
   int get blockPlacementPoints => _basePoints;
   int get lastClearPoints => _lastClearPoints;
+  int get currentComboCount => _currentComboCount;
 
   // Singleton pattern
   static final ScoringService _instance = ScoringService._internal();

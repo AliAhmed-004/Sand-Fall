@@ -8,6 +8,8 @@ import 'package:flame/extensions.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:sandfall/components/combo_feedback_effect.dart';
+import 'package:sandfall/config/floating_feedback_config.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/models/confetti_particle.dart';
 import 'package:sandfall/models/floating_score.dart';
@@ -21,6 +23,7 @@ import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/world.dart';
+import 'package:sandfall/utils/combo_praise_helper.dart';
 
 class SandGame extends FlameGame with TapCallbacks {
   // Temporary performance-first profile: keep mechanics, disable costly visuals.
@@ -139,6 +142,7 @@ class SandGame extends FlameGame with TapCallbacks {
   TextPainter? _floatingScoreTextPainter;
   int _floatingScorePainterValue = -1;
   FloatingScoreType? _floatingScorePainterType;
+  ComboFeedbackEffect? _activeComboFeedback;
 
   // Screen shake
   double _shakeIntensity = 0;
@@ -713,12 +717,34 @@ class SandGame extends FlameGame with TapCallbacks {
         if (_enableFloatingScores) {
           final screenX = gridOffset.dx + (cols * cellSize) / 2;
           final screenY = gridOffset.dy + (rows * cellSize) / 3;
-          _activeFloatingScore = FloatingScore(
-            value: ScoringService.instance.lastClearPoints,
-            startPosition: Offset(screenX, screenY),
-            type: FloatingScoreType.combo,
+          final praise = ComboPraiseHelper.selectPraise(
+            ScoringService.instance.currentComboCount,
           );
-          _invalidateFloatingScorePainter();
+          _activeComboFeedback = ComboFeedbackEffect(
+            scoreText: '+${ScoringService.instance.lastClearPoints}',
+            praiseText: praise.text,
+            scoreColor: FloatingFeedbackConfig.comboFeedbackScoreColor,
+            praiseColor: praise.color,
+            centerPosition: Offset(screenX, screenY),
+            duration: FloatingFeedbackConfig.comboPraiseDuration,
+            riseSpeed: FloatingFeedbackConfig.comboPraiseRiseSpeed,
+            fadeStart: FloatingFeedbackConfig.comboPraiseFadeStart,
+            scalePopDuration:
+                FloatingFeedbackConfig.comboPraiseScalePopDuration,
+            scalePopAmount: FloatingFeedbackConfig.comboPraiseScalePopAmount,
+            maxRotationRadians:
+                FloatingFeedbackConfig.comboPraiseMaxRotationRadians,
+            horizontalDrift: FloatingFeedbackConfig.comboPraiseHorizontalDrift,
+            scoreFontSize: FloatingFeedbackConfig.comboFeedbackScoreFontSize,
+            praiseFontSize: FloatingFeedbackConfig.comboFeedbackPraiseFontSize,
+            lineGap: FloatingFeedbackConfig.comboFeedbackLineGap,
+            shadowBlurRadius: FloatingFeedbackConfig.comboPraiseShadowBlurRadius,
+            shadowOpacity: FloatingFeedbackConfig.comboPraiseShadowOpacity,
+            praiseLetterSpacing:
+                FloatingFeedbackConfig.comboFeedbackPraiseLetterSpacing,
+            scoreLetterSpacing:
+                FloatingFeedbackConfig.comboFeedbackScoreLetterSpacing,
+          );
         }
 
         if (_enableScreenShake) {
@@ -757,6 +783,13 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     } else if (!_enableFloatingScores) {
       _activeFloatingScore = null;
+    }
+
+    if (_activeComboFeedback != null) {
+      _activeComboFeedback!.update(dt);
+      if (_activeComboFeedback!.isExpired) {
+        _activeComboFeedback = null;
+      }
     }
 
     // Update screen shake
@@ -876,6 +909,10 @@ class SandGame extends FlameGame with TapCallbacks {
     // Draw floating score popup
     if (_enableFloatingScores && _activeFloatingScore != null) {
       _drawFloatingScore(canvas);
+    }
+
+    if (_activeComboFeedback != null) {
+      _activeComboFeedback!.render(canvas);
     }
 
     canvas.restore();
@@ -1185,6 +1222,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _invalidateChunkVertexCaches();
     _activeFloatingScore = null;
     _invalidateFloatingScorePainter();
+    _activeComboFeedback = null;
     _shakeIntensity = 0;
     _shakeElapsed = 0;
     _shakeOffset = Offset.zero;
@@ -1252,6 +1290,7 @@ class SandGame extends FlameGame with TapCallbacks {
       _updateVertexPositions();
       _needsGameOverEvaluation = true;
       _invalidateFloatingScorePainter();
+      _activeComboFeedback = null;
     } catch (e) {
       // Silently fail if load is corrupted
     }
