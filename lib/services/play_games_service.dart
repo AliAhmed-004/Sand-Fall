@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:games_services/games_services.dart';
 import 'package:sandfall/config/game_config.dart';
 
-class PlayGamesService {
+class PlayGamesService extends ChangeNotifier {
   static final PlayGamesService _instance = PlayGamesService._internal();
 
   factory PlayGamesService() {
@@ -16,9 +17,14 @@ class PlayGamesService {
   bool _isSupportedPlatform = false;
   bool _isSignedIn = false;
   bool _isInitialized = false;
+  bool _autoSignInDisabled = false;
+  late Box _prefsBox;
 
   bool get isSupportedPlatform => _isSupportedPlatform;
   bool get isSignedIn => _isSignedIn;
+  bool get autoSignInDisabled => _autoSignInDisabled;
+  String get leaderboardsLabel =>
+      _isSignedIn ? 'LEADERBOARDS' : 'SIGN IN TO JOIN GLOBAL LEADERBOARDS';
   bool get isConfigured =>
       GameConfig.playGamesAndroidLeaderboardId.isNotEmpty ||
       GameConfig.playGamesIOSLeaderboardId.isNotEmpty;
@@ -29,22 +35,39 @@ class PlayGamesService {
       return;
     }
 
+    _prefsBox = await Hive.openBox(GameConfig.playGamesPrefsBox);
+    _autoSignInDisabled =
+        _prefsBox.get(
+              GameConfig.playGamesAutoSignInDisabledKey,
+              defaultValue: false,
+            )
+            as bool;
+
     _isSupportedPlatform = _supportsPlayGames();
     _isInitialized = true;
     print('[PlayGames] Initializing... (supported: $_isSupportedPlatform)');
 
     if (!_isSupportedPlatform) {
       print('[PlayGames] Platform not supported, skipping auth.');
+      notifyListeners();
       return;
     }
 
     await _refreshAuthState();
     print('[PlayGames] Auth state refreshed: signed in = $_isSignedIn');
 
-    if (!_isSignedIn) {
-      print('[PlayGames] Not signed in, attempting sign-in...');
-      await _attemptSignIn();
+    if (_isSignedIn) {
+      await _setAutoSignInDisabled(false);
+      notifyListeners();
+      return;
     }
+
+    if (!_autoSignInDisabled) {
+      print('[PlayGames] Not signed in, attempting automatic sign-in...');
+      await _attemptSignIn(rememberDismissal: true);
+    }
+
+    notifyListeners();
   }
 
   Future<void> submitScore(int score) async {
@@ -93,7 +116,9 @@ class PlayGamesService {
   }
 
   Future<bool> _ensureReadyForAction({required bool promptForSignIn}) async {
-    print('[PlayGames] Ensuring ready for action (promptForSignIn: $promptForSignIn)...');
+    print(
+      '[PlayGames] Ensuring ready for action (promptForSignIn: $promptForSignIn)...',
+    );
     if (!_supportsPlayGames()) {
       print('[PlayGames] Platform not supported.');
       return false;
@@ -122,7 +147,7 @@ class PlayGamesService {
     }
 
     print('[PlayGames] Prompting for sign-in...');
-    await _attemptSignIn();
+    await _attemptSignIn(rememberDismissal: false);
     print('[PlayGames] Sign-in attempt complete. Signed in: $_isSignedIn');
     return _isSignedIn;
   }
@@ -137,7 +162,7 @@ class PlayGamesService {
     }
   }
 
-  Future<void> _attemptSignIn() async {
+  Future<void> _attemptSignIn({required bool rememberDismissal}) async {
     try {
       debugPrint('[PlayGames] Calling GameAuth.signIn()...');
       await GameAuth.signIn();
@@ -148,6 +173,23 @@ class PlayGamesService {
     }
 
     await _refreshAuthState();
+
+    if (_isSignedIn) {
+      await _setAutoSignInDisabled(false);
+    } else if (rememberDismissal) {
+      await _setAutoSignInDisabled(true);
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> _setAutoSignInDisabled(bool value) async {
+    if (_autoSignInDisabled == value) {
+      return;
+    }
+
+    _autoSignInDisabled = value;
+    await _prefsBox.put(GameConfig.playGamesAutoSignInDisabledKey, value);
   }
 
   Score? _buildScore(int score) {
@@ -159,7 +201,9 @@ class PlayGamesService {
       return null;
     }
 
-    print('[PlayGames] Building score object: android="$androidId", ios="$iosId", value=$score');
+    print(
+      '[PlayGames] Building score object: android="$androidId", ios="$iosId", value=$score',
+    );
     return Score(
       androidLeaderboardID: androidId.isEmpty ? null : androidId,
       iOSLeaderboardID: iosId.isEmpty ? null : iosId,
@@ -176,14 +220,14 @@ class PlayGamesService {
     final supported = switch (defaultTargetPlatform) {
       TargetPlatform.android ||
       TargetPlatform.iOS ||
-      TargetPlatform.macOS =>
-        true,
+      TargetPlatform.macOS => true,
       TargetPlatform.fuchsia ||
       TargetPlatform.linux ||
-      TargetPlatform.windows =>
-        false,
+      TargetPlatform.windows => false,
     };
-    print('[PlayGames] Platform: $defaultTargetPlatform, supported: $supported');
+    print(
+      '[PlayGames] Platform: $defaultTargetPlatform, supported: $supported',
+    );
     return supported;
   }
 }

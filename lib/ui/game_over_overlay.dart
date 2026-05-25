@@ -71,23 +71,30 @@ class GameOverOverlay extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              MenuButton.secondary(
-                label: 'LEADERBOARDS',
-                onPressed: () async {
-                  final opened =
-                      await PlayGamesService.instance.showLeaderboards();
+              AnimatedBuilder(
+                animation: PlayGamesService.instance,
+                builder: (context, child) {
+                  return MenuButton.secondary(
+                    label: PlayGamesService.instance.leaderboardsLabel,
+                    onPressed: () async {
+                      final opened =
+                          await PlayGamesService.instance.showLeaderboards();
 
-                  if (!context.mounted) {
-                    return;
-                  }
+                      if (!context.mounted) {
+                        return;
+                      }
 
-                  if (!opened) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Play Games leaderboards are not available yet.'),
-                      ),
-                    );
-                  }
+                      if (!opened) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Play Games leaderboards are not available yet.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  );
                 },
               ),
 

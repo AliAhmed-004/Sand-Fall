@@ -12,7 +12,10 @@ class GameConfig {
 
   // Hive box names
   static final String gameStateBox = 'game_state_box';
+  static final String playGamesPrefsBox = 'play_games_prefs_box';
 
   // Hive keys
   static final String savedGameStateKey = 'saved_game_state';
+  static final String playGamesAutoSignInDisabledKey =
+      'play_games_auto_sign_in_disabled';
 }

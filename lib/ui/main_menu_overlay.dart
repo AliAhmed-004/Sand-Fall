@@ -28,9 +28,7 @@ class MainMenuOverlay extends StatelessWidget {
           const Positioned.fill(child: _FallingTetrominoBackground()),
           Center(
             child: Container(
-              decoration: BoxDecoration(
-                color: SandColors.darkBg.withAlpha(80),
-              ),
+              decoration: BoxDecoration(color: SandColors.darkBg.withAlpha(80)),
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -45,23 +43,30 @@ class MainMenuOverlay extends StatelessWidget {
 
                   const SizedBox(height: 48),
 
-                  MenuButton.secondary(
-                    label: 'LEADERBOARDS',
-                    onPressed: () async {
-                      final opened =
-                          await PlayGamesService.instance.showLeaderboards();
+                  AnimatedBuilder(
+                    animation: PlayGamesService.instance,
+                    builder: (context, child) {
+                      return MenuButton.secondary(
+                        label: PlayGamesService.instance.leaderboardsLabel,
+                        onPressed: () async {
+                          final opened = await PlayGamesService.instance
+                              .showLeaderboards();
 
-                      if (!context.mounted) {
-                        return;
-                      }
+                          if (!context.mounted) {
+                            return;
+                          }
 
-                      if (!opened) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Play Games leaderboards are not available yet.'),
-                          ),
-                        );
-                      }
+                          if (!opened) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Play Games leaderboards are not available yet.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      );
                     },
                   ),
 
@@ -248,8 +253,7 @@ class _TetrominoPainter extends CustomPainter {
     // Scatter phase: 0.82 - 1.0 (~0.2s)
     final double fallProgress = (progress / _fallPhaseEnd).clamp(0.0, 1.0);
     final double scatterProgress =
-        ((progress - _fallPhaseEnd) / (1.0 - _fallPhaseEnd))
-        .clamp(0.0, 1.0);
+        ((progress - _fallPhaseEnd) / (1.0 - _fallPhaseEnd)).clamp(0.0, 1.0);
     final double easedScatterProgress = Curves.easeInOut.transform(
       scatterProgress,
     );
@@ -262,14 +266,14 @@ class _TetrominoPainter extends CustomPainter {
     final double startY = -pieceHeight - 50;
     final double endY = size.height - pieceHeight;
     final double currentY =
-      startY + (endY - startY) * Curves.linear.transform(fallProgress);
+        startY + (endY - startY) * Curves.linear.transform(fallProgress);
 
     // Center the piece horizontally
     final double startX = (size.width - pieceWidth) / 2;
 
     final double alpha = progress < _fallPhaseEnd
         ? 120.0
-      : 120.0 * (1.0 - easedScatterProgress);
+        : 120.0 * (1.0 - easedScatterProgress);
     final paint = Paint()
       ..color = SandColors.primaryGold.withAlpha(alpha.round())
       ..style = PaintingStyle.fill;
