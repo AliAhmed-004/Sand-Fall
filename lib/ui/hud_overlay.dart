@@ -18,9 +18,12 @@ class HudOverlay extends StatefulWidget {
 }
 
 class _HudOverlayState extends State<HudOverlay>
-    with SingleTickerProviderStateMixin {
+  with TickerProviderStateMixin {
   late AnimationController _progressController;
   late Animation<double> _progressAnimation;
+  late AnimationController _entranceController;
+  late Animation<double> _entranceOpacity;
+  late Animation<Offset> _entranceOffset;
 
   int _lastMilestone = 0;
   int _milestoneStart = 0;
@@ -38,6 +41,26 @@ class _HudOverlayState extends State<HudOverlay>
       duration: const Duration(milliseconds: 300),
     );
 
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+      animationBehavior: AnimationBehavior.preserve,
+    );
+
+    final entranceCurve = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOutCubic,
+    );
+
+    _entranceOpacity = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _entranceOffset = Tween<Offset>(
+      begin: const Offset(0, -0.06),
+      end: Offset.zero,
+    ).animate(entranceCurve);
+
     _progressAnimation = AlwaysStoppedAnimation(0.0);
 
     final initialScore = ScoringService.instance.currentScore;
@@ -53,11 +76,14 @@ class _HudOverlayState extends State<HudOverlay>
     );
 
     ScoringService.instance.scoreNotifier.addListener(_onScoreChanged);
+
+    _entranceController.forward();
   }
 
   @override
   void dispose() {
     ScoringService.instance.scoreNotifier.removeListener(_onScoreChanged);
+    _entranceController.dispose();
     _progressController.dispose();
     super.dispose();
   }
@@ -155,108 +181,114 @@ class _HudOverlayState extends State<HudOverlay>
       top: 50,
       left: 20,
       right: 20,
-      child: Material(
-        type: MaterialType.transparency,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          decoration: BoxDecoration(
-            color: SandColors.darkBg.withAlpha(217), // Slightly more opaque
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: SandColors.deepSand, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: SandColors.primaryGold.withAlpha(51), // 20% opacity
-                blurRadius: 8,
+      child: FadeTransition(
+        opacity: _entranceOpacity,
+        child: SlideTransition(
+          position: _entranceOffset,
+          child: Material(
+            type: MaterialType.transparency,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: SandColors.darkBg.withAlpha(217), // Slightly more opaque
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: SandColors.deepSand, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: SandColors.primaryGold.withAlpha(51), // 20% opacity
+                    blurRadius: 8,
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Score (left)
-              Text(
-                formattedScore,
-                style: const TextStyle(
-                  color: SandColors.primaryGold,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: Row(
+                children: [
+                  // Score (left)
+                  Text(
+                    formattedScore,
+                    style: const TextStyle(
+                      color: SandColors.primaryGold,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
 
-              const SizedBox(width: 20),
+                  const SizedBox(width: 20),
 
-              // Progress Bar (center - flexible)
-              Expanded(
-                child: AnimatedBuilder(
-                  animation: _progressController,
-                  builder: (context, child) {
-                    final progress = _progressAnimation.value;
+                  // Progress Bar (center - flexible)
+                  Expanded(
+                    child: AnimatedBuilder(
+                      animation: _progressController,
+                      builder: (context, child) {
+                        final progress = _progressAnimation.value;
 
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: SandColors.sandyBeige.withAlpha(
-                            51,
-                          ), // 20% opacity
+                        return ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: SandColors.deepSand,
-                            width: 1,
+                          child: Container(
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: SandColors.sandyBeige.withAlpha(
+                                51,
+                              ), // 20% opacity
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: SandColors.deepSand,
+                                width: 1,
+                              ),
+                            ),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.transparent,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color.lerp(
+                                  SandColors.lightSand,
+                                  SandColors.warmAccent,
+                                  progress,
+                                )!,
+                              ),
+                              minHeight: 20,
+                            ),
                           ),
-                        ),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor: Colors.transparent,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color.lerp(
-                              SandColors.lightSand,
-                              SandColors.warmAccent,
-                              progress,
-                            )!,
-                          ),
-                          minHeight: 20,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                        );
+                      },
+                    ),
+                  ),
 
-              const SizedBox(width: 20),
+                  const SizedBox(width: 20),
 
-              // Pause Button (right)
-              SizedBox(
-                width: 44,
-                height: 44,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _togglePause,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: SandColors.warmAccent.withAlpha(
-                          51,
-                        ), // 20% opacity
+                  // Pause Button (right)
+                  SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _togglePause,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: SandColors.primaryGold,
-                          width: 2,
-                        ),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.pause,
-                          color: SandColors.primaryGold,
-                          size: 20,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: SandColors.warmAccent.withAlpha(
+                              51,
+                            ), // 20% opacity
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: SandColors.primaryGold,
+                              width: 2,
+                            ),
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.pause,
+                              color: SandColors.primaryGold,
+                              size: 20,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

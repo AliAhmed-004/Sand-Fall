@@ -10,10 +10,89 @@ import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/confirmation_dialog.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
 
-class MainMenuOverlay extends StatelessWidget {
+class MainMenuOverlay extends StatefulWidget {
   final SandGame game;
 
   const MainMenuOverlay({super.key, required this.game});
+
+  @override
+  State<MainMenuOverlay> createState() => _MainMenuOverlayState();
+}
+
+class _MainMenuOverlayState extends State<MainMenuOverlay>
+    with SingleTickerProviderStateMixin {
+  static const Duration _launchAnimationDuration = Duration(milliseconds: 280);
+
+  late final AnimationController _launchController;
+  late final Animation<double> _cardFade;
+  late final Animation<Offset> _cardSlide;
+  late final Animation<double> _cardScale;
+
+  bool _isLaunching = false;
+  Future<void> Function()? _pendingLaunch;
+
+  SandGame get _game => widget.game;
+
+  @override
+  void initState() {
+    super.initState();
+    _launchController = AnimationController(
+      vsync: this,
+      duration: _launchAnimationDuration,
+      animationBehavior: AnimationBehavior.preserve,
+    );
+
+    final easing = CurvedAnimation(
+      parent: _launchController,
+      curve: Curves.easeOutCubic,
+    );
+
+    _cardFade = Tween<double>(begin: 1.0, end: 0.0).animate(easing);
+    _cardSlide = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0, -0.06),
+    ).animate(easing);
+    _cardScale = Tween<double>(begin: 1.0, end: 0.975).animate(easing);
+
+    _launchController.addStatusListener(_onLaunchAnimationStatus);
+  }
+
+  @override
+  void dispose() {
+    _launchController.removeStatusListener(_onLaunchAnimationStatus);
+    _launchController.dispose();
+    super.dispose();
+  }
+
+  void _onLaunchAnimationStatus(AnimationStatus status) async {
+    if (status != AnimationStatus.completed || _pendingLaunch == null) {
+      return;
+    }
+
+    final launchAction = _pendingLaunch;
+    _pendingLaunch = null;
+
+    await launchAction?.call();
+
+    if (!mounted) {
+      return;
+    }
+
+    _game.overlays.remove(GameConfig.mainMenuOverlay);
+  }
+
+  void _launchIntoGame(Future<void> Function() action) {
+    if (_isLaunching) {
+      return;
+    }
+
+    setState(() {
+      _isLaunching = true;
+      _pendingLaunch = action;
+    });
+
+    _launchController.forward(from: 0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,121 +105,137 @@ class MainMenuOverlay extends StatelessWidget {
       child: Stack(
         children: [
           const Positioned.fill(child: _FallingTetrominoBackground()),
-          Center(
-            child: Container(
-              decoration: BoxDecoration(color: SandColors.darkBg.withAlpha(80)),
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Spacer(flex: 3),
+          IgnorePointer(
+            ignoring: _isLaunching,
+            child: Center(
+              child: FadeTransition(
+                opacity: _cardFade,
+                child: SlideTransition(
+                  position: _cardSlide,
+                  child: ScaleTransition(
+                    scale: _cardScale,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: SandColors.darkBg.withAlpha(80),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Spacer(flex: 3),
 
-                  const _GameTitle(),
+                          const _GameTitle(),
 
-                  const SizedBox(height: 48),
+                          const SizedBox(height: 48),
 
-                  _HighScoreCard(score: highScore),
+                          _HighScoreCard(score: highScore),
 
-                  const SizedBox(height: 48),
+                          const SizedBox(height: 48),
 
-                  AnimatedBuilder(
-                    animation: PlayGamesService.instance,
-                    builder: (context, child) {
-                      return MenuButton.secondary(
-                        label: PlayGamesService.instance.leaderboardsLabel,
-                        onPressed: () async {
-                          final opened = await PlayGamesService.instance
-                              .showLeaderboards();
+                          AnimatedBuilder(
+                            animation: PlayGamesService.instance,
+                            builder: (context, child) {
+                              return MenuButton.secondary(
+                                label:
+                                    PlayGamesService.instance.leaderboardsLabel,
+                                onPressed: () async {
+                                  final opened = await PlayGamesService.instance
+                                      .showLeaderboards();
 
-                          if (!context.mounted) {
-                            return;
-                          }
+                                  if (!context.mounted) {
+                                    return;
+                                  }
 
-                          if (!opened) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Play Games leaderboards are not available yet.',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    },
-                  ),
+                                  if (!opened) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Play Games leaderboards are not available yet.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
+                            },
+                          ),
 
-                  const SizedBox(height: 12),
+                          const SizedBox(height: 12),
 
-                  if (hasSavedGame) ...[
-                    MenuButton(
-                      label: 'CONTINUE',
-                      sublabel: 'Score: $savedScore',
-                      onPressed: () {
-                        game.continueSavedGame();
-                        game.overlays.remove(GameConfig.mainMenuOverlay);
-                        game.overlays.add(GameConfig.hudOverlay);
-                      },
+                          if (hasSavedGame) ...[
+                            MenuButton(
+                              label: 'CONTINUE',
+                              sublabel: 'Score: $savedScore',
+                              onPressed: () {
+                                _launchIntoGame(() async {
+                                  _game.continueSavedGame();
+                                  _game.overlays.add(GameConfig.hudOverlay);
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          MenuButton(
+                            label: 'NEW GAME',
+                            onPressed: () async {
+                              await SaveGameService.instance.deleteSavedGame();
+                              if (!context.mounted) {
+                                return;
+                              }
+
+                              _launchIntoGame(() async {
+                                _game.startNewGame();
+                                _game.overlays.add(GameConfig.hudOverlay);
+                              });
+                            },
+                          ),
+
+                          Divider(
+                            height: 32,
+                            thickness: 1,
+                            color: SandColors.lightSand.withAlpha(100),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          MenuButton.secondary(
+                            label: 'PLAY TUTORIAL',
+                            onPressed: () async {
+                              final shouldStart = hasSavedGame
+                                  ? await showConfirmationDialog(
+                                      context,
+                                      title: 'START TUTORIAL?',
+                                      message:
+                                          'Your saved game will be deleted and a new tutorial run will start.',
+                                    )
+                                  : true;
+
+                              if (!context.mounted || !shouldStart) {
+                                return;
+                              }
+
+                              if (hasSavedGame) {
+                                await SaveGameService.instance.deleteSavedGame();
+                                if (!context.mounted) {
+                                  return;
+                                }
+                              }
+
+                              _launchIntoGame(() async {
+                                _game.startTutorialGame();
+                                _game.overlays.add(GameConfig.hudOverlay);
+                                _game.overlays.add(GameConfig.tutorialOverlay);
+                              });
+                            },
+                          ),
+
+                          const Spacer(flex: 3),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  MenuButton(
-                    label: 'NEW GAME',
-                    onPressed: () async {
-                      await SaveGameService.instance.deleteSavedGame();
-                      if (!context.mounted) {
-                        return;
-                      }
-
-                      game.startNewGame();
-
-                      game.overlays.remove(GameConfig.mainMenuOverlay);
-
-                      game.overlays.add(GameConfig.hudOverlay);
-                    },
                   ),
-
-                  Divider(
-                    height: 32,
-                    thickness: 1,
-                    color: SandColors.lightSand.withAlpha(100),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  MenuButton.secondary(
-                    label: 'PLAY TUTORIAL',
-                    onPressed: () async {
-                      final shouldStart = hasSavedGame
-                          ? await showConfirmationDialog(
-                              context,
-                              title: 'START TUTORIAL?',
-                              message:
-                                  'Your saved game will be deleted and a new tutorial run will start.',
-                            )
-                          : true;
-
-                      if (!context.mounted || !shouldStart) {
-                        return;
-                      }
-
-                      if (hasSavedGame) {
-                        await SaveGameService.instance.deleteSavedGame();
-                        if (!context.mounted) {
-                          return;
-                        }
-                      }
-
-                      game.startTutorialGame();
-                      game.overlays.remove(GameConfig.mainMenuOverlay);
-                      game.overlays.add(GameConfig.hudOverlay);
-                      game.overlays.add(GameConfig.tutorialOverlay);
-                    },
-                  ),
-
-                  const Spacer(flex: 3),
-                ],
+                ),
               ),
             ),
           ),
