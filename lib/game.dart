@@ -106,6 +106,10 @@ class SandGame extends FlameGame with TapCallbacks {
   double previewSize = 120.0; // size of the preview box in pixels
   final int previewGridSize = 6; // small grid (e.g. 6x6) for preview
 
+  // Next-preview pop animation
+  double _nextPreviewPopElapsed = 999.0;
+  static const double _nextPreviewPopDuration = 0.25;
+
   bool _isLoaded = false;
 
   final TutorialCoachController tutorialCoach = TutorialCoachController();
@@ -260,6 +264,8 @@ class SandGame extends FlameGame with TapCallbacks {
     final forcedTutorialColor = tutorialCoach.forcedColor;
     if (forcedTutorialColor != null) {
       nextColor = forcedTutorialColor;
+      // Trigger preview pop animation
+      _nextPreviewPopElapsed = 0.0;
       return;
     }
 
@@ -269,6 +275,7 @@ class SandGame extends FlameGame with TapCallbacks {
       currentScore,
     );
     nextColor = availableColors[_random.nextInt(availableColors.length)];
+    _nextPreviewPopElapsed = 0.0;
   }
 
   @override
@@ -543,6 +550,14 @@ class SandGame extends FlameGame with TapCallbacks {
     super.update(dt);
 
     tutorialCoach.update(dt);
+
+    // Update next-preview pop timer
+    if (_nextPreviewPopElapsed < _nextPreviewPopDuration) {
+      _nextPreviewPopElapsed += dt;
+      if (_nextPreviewPopElapsed > _nextPreviewPopDuration) {
+        _nextPreviewPopElapsed = _nextPreviewPopDuration;
+      }
+    }
 
     // Update clearing animation if in progress
     if (_cellsToClears.isNotEmpty) {
@@ -1104,7 +1119,21 @@ class SandGame extends FlameGame with TapCallbacks {
     final previewX = (size.x - previewSize) / 2;
     final previewY = max(gridBottom + 16, size.y - previewSize - 32);
 
-    final bgRect = Rect.fromLTWH(previewX, previewY, previewSize, previewSize);
+    // Pop animation for preview box: scale around its center
+    final popT = (_nextPreviewPopElapsed < _nextPreviewPopDuration)
+        ? (_nextPreviewPopElapsed / _nextPreviewPopDuration)
+        : 1.0;
+    final popTransform = Curves.easeOut.transform(popT);
+    final popScale = 1.0 + 0.22 * (1.0 - popTransform);
+
+    final centerX = previewX + previewSize / 2;
+    final centerY = previewY + previewSize / 2;
+
+    canvas.save();
+    canvas.translate(centerX, centerY);
+    canvas.scale(popScale, popScale);
+
+    final bgRect = Rect.fromLTWH(-previewSize / 2, -previewSize / 2, previewSize, previewSize);
 
     canvas.drawRect(bgRect, Paint()..color = SandColors.previewBoxDark);
 
@@ -1117,15 +1146,14 @@ class SandGame extends FlameGame with TapCallbacks {
     );
 
     // Use cached NEXT TextPainter instead of creating new one every frame
-    _nextTextPainter.paint(
-      canvas,
-      Offset(
-        previewX + (previewSize - _nextTextPainter.width) / 2,
-        previewY - 28,
-      ),
-    );
+    final textX = -previewSize / 2 + (previewSize - _nextTextPainter.width) / 2;
+    final textY = -previewSize / 2 - 28;
+    _nextTextPainter.paint(canvas, Offset(textX, textY));
 
-    if (nextShape.isEmpty) return;
+    if (nextShape.isEmpty) {
+      canvas.restore();
+      return;
+    }
 
     final shapeWidth = _nextShapeMaxX - _nextShapeMinX + 1;
     final shapeHeight = _nextShapeMaxY - _nextShapeMinY + 1;
@@ -1159,13 +1187,15 @@ class SandGame extends FlameGame with TapCallbacks {
       final drawY = offsetY + p.y * previewCellSize;
 
       final rect = Rect.fromLTWH(
-        drawX,
-        drawY,
+        drawX - centerX,
+        drawY - centerY,
         previewCellSize,
         previewCellSize,
       );
       canvas.drawRect(rect, paint);
     }
+
+    canvas.restore();
   }
 
   void _drawFloatingScore(Canvas canvas) {
