@@ -1119,19 +1119,11 @@ class SandGame extends FlameGame with TapCallbacks {
     final previewX = (size.x - previewSize) / 2;
     final previewY = max(gridBottom + 16, size.y - previewSize - 32);
 
-    // Pop animation for preview box: scale around its center
-    final popT = (_nextPreviewPopElapsed < _nextPreviewPopDuration)
-        ? (_nextPreviewPopElapsed / _nextPreviewPopDuration)
-        : 1.0;
-    final popTransform = Curves.easeOut.transform(popT);
-    final popScale = 1.0 + 0.22 * (1.0 - popTransform);
-
     final centerX = previewX + previewSize / 2;
     final centerY = previewY + previewSize / 2;
 
     canvas.save();
     canvas.translate(centerX, centerY);
-    canvas.scale(popScale, popScale);
 
     final bgRect = Rect.fromLTWH(-previewSize / 2, -previewSize / 2, previewSize, previewSize);
 
