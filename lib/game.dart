@@ -22,6 +22,7 @@ import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
+import 'package:sandfall/tutorial/tutorial_coach.dart';
 import 'package:sandfall/world.dart';
 import 'package:sandfall/utils/combo_praise_helper.dart';
 
@@ -106,6 +107,8 @@ class SandGame extends FlameGame with TapCallbacks {
   final int previewGridSize = 6; // small grid (e.g. 6x6) for preview
 
   bool _isLoaded = false;
+
+  final TutorialCoachController tutorialCoach = TutorialCoachController();
 
   // Performance optimization: cached NEXT TextPainter
   late TextPainter _nextTextPainter;
@@ -252,6 +255,12 @@ class SandGame extends FlameGame with TapCallbacks {
       _nextShapeMaxX = maxX;
       _nextShapeMinY = minY;
       _nextShapeMaxY = maxY;
+    }
+
+    final forcedTutorialColor = tutorialCoach.forcedColor;
+    if (forcedTutorialColor != null) {
+      nextColor = forcedTutorialColor;
+      return;
     }
 
     // Get available colors based on current difficulty
@@ -533,6 +542,8 @@ class SandGame extends FlameGame with TapCallbacks {
 
     super.update(dt);
 
+    tutorialCoach.update(dt);
+
     // Update clearing animation if in progress
     if (_cellsToClears.isNotEmpty) {
       _clearingElapsedTime += dt;
@@ -698,6 +709,10 @@ class SandGame extends FlameGame with TapCallbacks {
           }
         }
       });
+
+      if (anyBridgesCleared) {
+        tutorialCoach.markBridgeCleared();
+      }
 
       // Start one clear animation for all cleared bridges.
       if (indicesToClear.isNotEmpty) {
@@ -1195,9 +1210,8 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   /// Resets game state for a new game. Clears the board and resets all game flags.
-  void resetGameState() {
+  void resetGameState({bool regenerateNextPiece = true}) {
     sandWorld = SandWorld(cols: cols, rows: rows);
-    _generateNextPiece();
     ScoringService.instance.resetScore();
     _isGameOverDetected = false;
     _previousMilestone = 0;
@@ -1229,6 +1243,39 @@ class SandGame extends FlameGame with TapCallbacks {
     _shakeOffset = Offset.zero;
     _confettiEmitter.particles.clear();
     _activeBadge = null;
+    tutorialCoach.reset();
+
+    if (regenerateNextPiece) {
+      _generateNextPiece();
+    }
+  }
+
+  void startNewGame() {
+    resetGameState(regenerateNextPiece: false);
+    _generateNextPiece();
+    isGameStarted = true;
+    resumeEngine();
+  }
+
+  void startTutorialGame() {
+    resetGameState(regenerateNextPiece: false);
+    tutorialCoach.start(forcedColor: _tutorialForceColor());
+    _generateNextPiece();
+    isGameStarted = true;
+    resumeEngine();
+  }
+
+  void continueSavedGame() {
+    loadSavedGame();
+    isGameStarted = true;
+    resumeEngine();
+  }
+
+  Color _tutorialForceColor() {
+    final availableColors = DifficultyService.instance.getAvailableColors(
+      ScoringService.instance.currentScore,
+    );
+    return availableColors.first;
   }
 
   /// Loads a saved game state and rebuilds the world from the saved sparse grid.
@@ -1292,6 +1339,8 @@ class SandGame extends FlameGame with TapCallbacks {
       _needsGameOverEvaluation = true;
       _invalidateFloatingScorePainter();
       _activeComboFeedback = null;
+      tutorialCoach.reset();
+      overlays.remove(GameConfig.tutorialOverlay);
     } catch (e) {
       // Silently fail if load is corrupted
     }

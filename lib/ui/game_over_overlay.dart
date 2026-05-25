@@ -111,13 +111,8 @@ class GameOverOverlay extends StatelessWidget {
               MenuButton(
                 label: "TRY AGAIN",
                 onPressed: () {
-                  game.resetGameState();
-                  ScoringService.instance.resetScore();
-
                   game.overlays.remove(GameConfig.gameOverOverlay);
-
-                  game.isGameStarted = true;
-                  game.resumeEngine();
+                  game.startNewGame();
 
                   game.overlays.add(GameConfig.hudOverlay);
                 },

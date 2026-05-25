@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/theme/theme.dart';
+import 'package:sandfall/ui/confirmation_dialog.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
 
 /// Pause overlay for the Sand Crush game.
@@ -32,9 +33,7 @@ class _PauseOverlayState extends State<PauseOverlay> {
   }
 
   void _restart() {
-    // SaveGameService.instance.deleteSavedGame();
-    widget.game.resetGameState();
-    widget.game.resumeEngine();
+    widget.game.startNewGame();
     widget.game.overlays.remove(GameConfig.pauseOverlay);
   }
 
@@ -93,8 +92,21 @@ class _PauseOverlayState extends State<PauseOverlay> {
                   const SizedBox(height: 16),
 
                   MenuButton.secondary(
-                    label: 'HOW TO PLAY',
-                    onPressed: () {
+                    label: 'PLAY TUTORIAL',
+                    onPressed: () async {
+                      final shouldStart = await showConfirmationDialog(
+                        context,
+                        title: 'REPLACE CURRENT RUN?',
+                        message:
+                            'Your current run will be replaced and a new tutorial game will start.',
+                      );
+
+                      if (!context.mounted || !shouldStart) {
+                        return;
+                      }
+
+                      widget.game.startTutorialGame();
+                      widget.game.overlays.remove(GameConfig.pauseOverlay);
                       widget.game.overlays.add(GameConfig.tutorialOverlay);
                     },
                   ),

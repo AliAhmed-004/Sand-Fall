@@ -6,8 +6,8 @@ import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
-import 'package:sandfall/services/scoring_service.dart';
 import 'package:sandfall/theme/theme.dart';
+import 'package:sandfall/ui/confirmation_dialog.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
 
 class MainMenuOverlay extends StatelessWidget {
@@ -72,9 +72,7 @@ class MainMenuOverlay extends StatelessWidget {
                       label: 'CONTINUE',
                       sublabel: 'Score: $savedScore',
                       onPressed: () {
-                        game.loadSavedGame();
-                        game.isGameStarted = true;
-                        game.resumeEngine();
+                        game.continueSavedGame();
                         game.overlays.remove(GameConfig.mainMenuOverlay);
                         game.overlays.add(GameConfig.hudOverlay);
                       },
@@ -84,12 +82,13 @@ class MainMenuOverlay extends StatelessWidget {
 
                   MenuButton(
                     label: 'NEW GAME',
-                    onPressed: () {
-                      SaveGameService.instance.deleteSavedGame();
-                      game.resetGameState();
-                      ScoringService.instance.resetScore();
-                      game.isGameStarted = true;
-                      game.resumeEngine();
+                    onPressed: () async {
+                      await SaveGameService.instance.deleteSavedGame();
+                      if (!context.mounted) {
+                        return;
+                      }
+
+                      game.startNewGame();
 
                       game.overlays.remove(GameConfig.mainMenuOverlay);
 
@@ -106,8 +105,31 @@ class MainMenuOverlay extends StatelessWidget {
                   const SizedBox(height: 10),
 
                   MenuButton.secondary(
-                    label: 'HOW TO PLAY',
-                    onPressed: () {
+                    label: 'PLAY TUTORIAL',
+                    onPressed: () async {
+                      final shouldStart = hasSavedGame
+                          ? await showConfirmationDialog(
+                              context,
+                              title: 'START TUTORIAL?',
+                              message:
+                                  'Your saved game will be deleted and a new tutorial run will start.',
+                            )
+                          : true;
+
+                      if (!context.mounted || !shouldStart) {
+                        return;
+                      }
+
+                      if (hasSavedGame) {
+                        await SaveGameService.instance.deleteSavedGame();
+                        if (!context.mounted) {
+                          return;
+                        }
+                      }
+
+                      game.startTutorialGame();
+                      game.overlays.remove(GameConfig.mainMenuOverlay);
+                      game.overlays.add(GameConfig.hudOverlay);
                       game.overlays.add(GameConfig.tutorialOverlay);
                     },
                   ),
