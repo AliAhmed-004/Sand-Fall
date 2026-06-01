@@ -21,9 +21,9 @@ void main() async {
   await Hive.initFlutter();
   await HighScoreService.instance.initialize();
   await SaveGameService.instance.initialize();
-  print('[App] Initializing Play Games...');
+  debugPrint('[App] Initializing Play Games...');
   await PlayGamesService.instance.initialize();
-  print('[App] Initialization complete.');
+  debugPrint('[App] Initialization complete.');
 
   Flame.device.fullScreen();
 

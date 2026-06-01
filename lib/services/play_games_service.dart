@@ -31,7 +31,7 @@ class PlayGamesService extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (_isInitialized) {
-      print('[PlayGames] Already initialized, skipping.');
+      debugPrint('[PlayGames] Already initialized, skipping.');
       return;
     }
 
@@ -45,16 +45,16 @@ class PlayGamesService extends ChangeNotifier {
 
     _isSupportedPlatform = _supportsPlayGames();
     _isInitialized = true;
-    print('[PlayGames] Initializing... (supported: $_isSupportedPlatform)');
+    debugPrint('[PlayGames] Initializing... (supported: $_isSupportedPlatform)');
 
     if (!_isSupportedPlatform) {
-      print('[PlayGames] Platform not supported, skipping auth.');
+      debugPrint('[PlayGames] Platform not supported, skipping auth.');
       notifyListeners();
       return;
     }
 
     await _refreshAuthState();
-    print('[PlayGames] Auth state refreshed: signed in = $_isSignedIn');
+    debugPrint('[PlayGames] Auth state refreshed: signed in = $_isSignedIn');
 
     if (_isSignedIn) {
       await _setAutoSignInDisabled(false);
@@ -63,7 +63,7 @@ class PlayGamesService extends ChangeNotifier {
     }
 
     if (!_autoSignInDisabled) {
-      print('[PlayGames] Not signed in, attempting automatic sign-in...');
+      debugPrint('[PlayGames] Not signed in, attempting automatic sign-in...');
       await _attemptSignIn(rememberDismissal: true);
     }
 
@@ -71,93 +71,93 @@ class PlayGamesService extends ChangeNotifier {
   }
 
   Future<void> submitScore(int score) async {
-    print('[PlayGames] Attempting to submit score: $score');
+    debugPrint('[PlayGames] Attempting to submit score: $score');
     if (!await _ensureReadyForAction(promptForSignIn: false)) {
-      print('[PlayGames] Not ready for score submission (not signed in).');
+      debugPrint('[PlayGames] Not ready for score submission (not signed in).');
       return;
     }
 
     final leaderboard = _buildScore(score);
     if (leaderboard == null) {
-      print('[PlayGames] No leaderboard ID configured, skipping submission.');
+      debugPrint('[PlayGames] No leaderboard ID configured, skipping submission.');
       return;
     }
 
     try {
-      print('[PlayGames] Submitting score to leaderboard...');
+      debugPrint('[PlayGames] Submitting score to leaderboard...');
       await Leaderboards.submitScore(score: leaderboard);
-      print('[PlayGames] Score submitted successfully.');
+      debugPrint('[PlayGames] Score submitted successfully.');
     } catch (e) {
-      print('[PlayGames] Error submitting score: $e');
+      debugPrint('[PlayGames] Error submitting score: $e');
       _isSignedIn = false;
     }
   }
 
   Future<bool> showLeaderboards() async {
-    print('[PlayGames] Attempting to show leaderboards...');
+    debugPrint('[PlayGames] Attempting to show leaderboards...');
     if (!await _ensureReadyForAction(promptForSignIn: true)) {
-      print('[PlayGames] Not ready to show leaderboards (not signed in).');
+      debugPrint('[PlayGames] Not ready to show leaderboards (not signed in).');
       return false;
     }
 
     try {
-      print('[PlayGames] Opening leaderboards UI...');
+      debugPrint('[PlayGames] Opening leaderboards UI...');
       await Leaderboards.showLeaderboards(
         androidLeaderboardID: GameConfig.playGamesAndroidLeaderboardId,
         iOSLeaderboardID: GameConfig.playGamesIOSLeaderboardId,
       );
-      print('[PlayGames] Leaderboards UI closed.');
+      debugPrint('[PlayGames] Leaderboards UI closed.');
       return true;
     } catch (e) {
-      print('[PlayGames] Error showing leaderboards: $e');
+      debugPrint('[PlayGames] Error showing leaderboards: $e');
       _isSignedIn = false;
       return false;
     }
   }
 
   Future<bool> _ensureReadyForAction({required bool promptForSignIn}) async {
-    print(
+    debugPrint(
       '[PlayGames] Ensuring ready for action (promptForSignIn: $promptForSignIn)...',
     );
     if (!_supportsPlayGames()) {
-      print('[PlayGames] Platform not supported.');
+      debugPrint('[PlayGames] Platform not supported.');
       return false;
     }
 
     if (!_isInitialized) {
-      print('[PlayGames] Not yet initialized, initializing now...');
+      debugPrint('[PlayGames] Not yet initialized, initializing now...');
       await initialize();
     }
 
     if (_isSignedIn) {
-      print('[PlayGames] Already signed in.');
+      debugPrint('[PlayGames] Already signed in.');
       return true;
     }
 
-    print('[PlayGames] Refreshing auth state...');
+    debugPrint('[PlayGames] Refreshing auth state...');
     await _refreshAuthState();
     if (_isSignedIn) {
-      print('[PlayGames] Now signed in after refresh.');
+      debugPrint('[PlayGames] Now signed in after refresh.');
       return true;
     }
 
     if (!promptForSignIn) {
-      print('[PlayGames] Sign-in prompt disabled, returning false.');
+      debugPrint('[PlayGames] Sign-in prompt disabled, returning false.');
       return false;
     }
 
-    print('[PlayGames] Prompting for sign-in...');
+    debugPrint('[PlayGames] Prompting for sign-in...');
     await _attemptSignIn(rememberDismissal: false);
-    print('[PlayGames] Sign-in attempt complete. Signed in: $_isSignedIn');
+    debugPrint('[PlayGames] Sign-in attempt complete. Signed in: $_isSignedIn');
     return _isSignedIn;
   }
 
   Future<void> _refreshAuthState() async {
     try {
       _isSignedIn = await GameAuth.isSignedIn;
-      print('[PlayGames] Auth state refreshed: $_isSignedIn');
+      debugPrint('[PlayGames] Auth state refreshed: $_isSignedIn');
     } catch (e) {
-      print('[PlayGames] Error checking auth state: $e');
+      debugPrint('[PlayGames] Error checking auth state: $e');
       _isSignedIn = false;
     }
   }
@@ -197,11 +197,11 @@ class PlayGamesService extends ChangeNotifier {
     final iosId = GameConfig.playGamesIOSLeaderboardId;
 
     if (androidId.isEmpty && iosId.isEmpty) {
-      print('[PlayGames] No leaderboard IDs configured.');
+      debugPrint('[PlayGames] No leaderboard IDs configured.');
       return null;
     }
 
-    print(
+    debugPrint(
       '[PlayGames] Building score object: android="$androidId", ios="$iosId", value=$score',
     );
     return Score(
@@ -213,7 +213,7 @@ class PlayGamesService extends ChangeNotifier {
 
   bool _supportsPlayGames() {
     if (kIsWeb) {
-      print('[PlayGames] Web platform detected, Play Games not supported.');
+      debugPrint('[PlayGames] Web platform detected, Play Games not supported.');
       return false;
     }
 
@@ -225,7 +225,7 @@ class PlayGamesService extends ChangeNotifier {
       TargetPlatform.linux ||
       TargetPlatform.windows => false,
     };
-    print(
+    debugPrint(
       '[PlayGames] Platform: $defaultTargetPlatform, supported: $supported',
     );
     return supported;

@@ -1314,13 +1314,13 @@ class SandGame extends FlameGame with TapCallbacks {
     }
 
     final finalScore = ScoringService.instance.currentScore;
-    print('[Game] Game over detected! Final score: $finalScore');
+    debugPrint('[Game] Game over detected! Final score: $finalScore');
 
     unawaited(() async {
       try {
-        print('[Game] Saving high score...');
+        debugPrint('[Game] Saving high score...');
         await HighScoreService.instance.saveHighScoreIfHigher(finalScore);
-        print('[Game] High score saved. Submitting to Play Games...');
+        debugPrint('[Game] High score saved. Submitting to Play Games...');
         await PlayGamesService.instance.submitScore(finalScore);
       } catch (_) {
         // Local persistence and Play Games submission are best-effort.
