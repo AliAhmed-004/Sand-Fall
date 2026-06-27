@@ -93,6 +93,7 @@ class SandGame extends FlameGame with TapCallbacks {
   int _placementsSinceLastSave = 0;
   bool _hasPendingAutosave = false;
   bool _isAutosaveInFlight = false;
+  bool _isBridgeClearPending = false;
 
   // Next piece preview
   late List<Point<int>> nextShape;
@@ -735,6 +736,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
       // Start one clear animation for all cleared bridges.
       if (indicesToClear.isNotEmpty) {
+        _isBridgeClearPending = true;
         final clearList = indicesToClear.toList(growable: false);
         if (_enableClearAnimation) {
           _startClearingAnimation(clearList);
@@ -795,6 +797,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
       // Only evaluate game over after all bridge clears have been resolved.
       if (!anyBridgesCleared && _cellsToClears.isEmpty && sandWorld.isStable) {
+        _isBridgeClearPending = false;
         _needsGameOverEvaluation = true;
       }
     }
@@ -807,7 +810,10 @@ class SandGame extends FlameGame with TapCallbacks {
       _needsGameOverEvaluation = false;
     }
 
-    if (_hasPendingAutosave && sandWorld.isStable && !_needsSimulation) {
+    if (_hasPendingAutosave &&
+        sandWorld.isStable &&
+        !_needsSimulation &&
+        !_isBridgeClearPending) {
       _triggerAutosave();
     }
 
@@ -1478,6 +1484,7 @@ class SandGame extends FlameGame with TapCallbacks {
     _placementsSinceLastSave = 0;
     _hasPendingAutosave = false;
     _isAutosaveInFlight = false;
+    _isBridgeClearPending = false;
     _isGameOverSweepActive = false;
     _isGameOverFinalized = false;
     _gameOverSweepElapsed = 0;
@@ -1587,6 +1594,7 @@ class SandGame extends FlameGame with TapCallbacks {
       _placementsSinceLastSave = 0;
       _hasPendingAutosave = false;
       _isAutosaveInFlight = false;
+      _isBridgeClearPending = false;
       _isGameOverSweepActive = false;
       _isGameOverFinalized = false;
       _gameOverSweepElapsed = 0;
