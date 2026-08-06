@@ -6,6 +6,7 @@ import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
+import 'package:sandfall/services/update_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/confirmation_dialog.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
@@ -55,6 +56,17 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
     _cardScale = Tween<double>(begin: 1.0, end: 0.975).animate(easing);
 
     _launchController.addStatusListener(_onLaunchAnimationStatus);
+
+    // Check for app updates when main menu is shown
+    _checkForAppUpdate();
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    await UpdateService.instance.checkForUpdate();
+    // Show update prompt if available
+    if (mounted && UpdateService.instance.updateAvailable) {
+      await UpdateService.instance.showUpdatePromptIfAvailable(context);
+    }
   }
 
   @override

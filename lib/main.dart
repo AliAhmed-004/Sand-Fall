@@ -7,6 +7,7 @@ import 'package:sandfall/game.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
+import 'package:sandfall/services/update_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/celebration_overlay.dart';
 import 'package:sandfall/ui/game_over_overlay.dart';
@@ -23,6 +24,8 @@ void main() async {
   await SaveGameService.instance.initialize();
   debugPrint('[App] Initializing Play Games...');
   await PlayGamesService.instance.initialize();
+  debugPrint('[App] Initializing Update Service...');
+  await UpdateService.instance.initialize();
   debugPrint('[App] Initialization complete.');
 
   Flame.device.fullScreen();
