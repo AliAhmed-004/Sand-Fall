@@ -191,6 +191,19 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
                           MenuButton(
                             label: 'NEW GAME',
                             onPressed: () async {
+                              final shouldStartNewGame = hasSavedGame
+                                  ? await showConfirmationDialog(
+                                      context,
+                                      title: 'START NEW GAME?',
+                                      message:
+                                          'Your saved game will be deleted and a new game will start.',
+                                    )
+                                  : true;
+
+                              if (!context.mounted || !shouldStartNewGame) {
+                                return;
+                              }
+
                               await SaveGameService.instance.deleteSavedGame();
                               if (!context.mounted) {
                                 return;
@@ -228,7 +241,8 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
                               }
 
                               if (hasSavedGame) {
-                                await SaveGameService.instance.deleteSavedGame();
+                                await SaveGameService.instance
+                                    .deleteSavedGame();
                                 if (!context.mounted) {
                                   return;
                                 }
