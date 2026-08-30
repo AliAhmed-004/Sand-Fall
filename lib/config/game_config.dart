@@ -5,6 +5,8 @@ class GameConfig {
   static final String tutorialOverlay = 'TutorialOverlay';
   static final String celebrationOverlay = 'CelebrationOverlay';
   static final String gameOverOverlay = 'GameOverOverlay';
+  static final String dailyResultOverlay = 'DailyResultOverlay';
+  static final String dailyChallengeOverlay = 'DailyChallengeOverlay';
 
   // Play Games leaderboards
   static const String playGamesAndroidLeaderboardId = 'CgkI4sqYhPwLEAIQAQ';
@@ -21,3 +23,4 @@ class GameConfig {
       'play_games_auto_sign_in_disabled';
   static final String lastUpdateCheckKey = 'last_update_check';
 }
+

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
+import 'package:sandfall/services/daily_challenge_service.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
@@ -32,6 +33,9 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
   bool _isLaunching = false;
   Future<void> Function()? _pendingLaunch;
 
+  int _dailyStreak = 0;
+  bool _dailyPlayedToday = false;
+
   SandGame get _game => widget.game;
 
   @override
@@ -59,6 +63,19 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
 
     // Check for app updates when main menu is shown
     _checkForAppUpdate();
+
+    // Load daily challenge state for streak display
+    _loadDailyChallengeState();
+  }
+
+  Future<void> _loadDailyChallengeState() async {
+    final state = await DailyChallengeService.instance.loadState();
+    if (mounted) {
+      setState(() {
+        _dailyStreak = state.streak;
+        _dailyPlayedToday = state.completedToday;
+      });
+    }
   }
 
   Future<void> _checkForAppUpdate() async {
@@ -223,6 +240,23 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
                           ),
 
                           const SizedBox(height: 10),
+
+                          MenuButton(
+                            label: 'DAILY CHALLENGE',
+                            sublabel: _dailyStreak > 1
+                                ? '🔥 $_dailyStreak-day streak'
+                                : _dailyPlayedToday
+                                    ? 'Completed today ✓'
+                                    : 'New challenge available!',
+                            onPressed: () {
+                              _game.overlays.remove(GameConfig.mainMenuOverlay);
+                              _game.overlays.add(
+                                GameConfig.dailyChallengeOverlay,
+                              );
+                            },
+                          ),
+
+                          const SizedBox(height: 12),
 
                           MenuButton.secondary(
                             label: 'PLAY TUTORIAL',

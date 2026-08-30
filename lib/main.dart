@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
+import 'package:sandfall/services/daily_challenge_service.dart';
 import 'package:sandfall/services/high_score_service.dart';
+import 'package:sandfall/services/notification_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/update_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/celebration_overlay.dart';
+import 'package:sandfall/ui/daily_challenge_overlay.dart';
+import 'package:sandfall/ui/daily_result_overlay.dart';
 import 'package:sandfall/ui/game_over_overlay.dart';
 import 'package:sandfall/ui/hud_overlay.dart';
 import 'package:sandfall/ui/main_menu_overlay.dart';
@@ -22,10 +26,19 @@ void main() async {
   await Hive.initFlutter();
   await HighScoreService.instance.initialize();
   await SaveGameService.instance.initialize();
+
   debugPrint('[App] Initializing Play Games...');
   await PlayGamesService.instance.initialize();
+
   debugPrint('[App] Initializing Update Service...');
   await UpdateService.instance.initialize();
+
+  debugPrint('[App] Initializing Daily Challenge Service...');
+  await DailyChallengeService.instance.initialize(); // ← add
+
+  debugPrint('[App] Initializing Notification Service...');
+  await NotificationService.instance.initialize();
+
   debugPrint('[App] Initialization complete.');
 
   Flame.device.fullScreen();
@@ -58,6 +71,10 @@ class SandCrush extends StatelessWidget {
               CelebrationOverlay(game: game as SandGame),
           GameConfig.gameOverOverlay: (context, game) =>
               GameOverOverlay(game: game as SandGame),
+          GameConfig.dailyChallengeOverlay: (context, game) =>
+              DailyChallengeOverlay(game: game as SandGame),
+          GameConfig.dailyResultOverlay: (context, game) =>
+              DailyResultOverlay(game: game as SandGame),
         },
         initialActiveOverlays: [GameConfig.mainMenuOverlay],
       ),

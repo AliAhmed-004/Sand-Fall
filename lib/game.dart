@@ -15,9 +15,11 @@ import 'package:sandfall/models/confetti_particle.dart';
 import 'package:sandfall/models/floating_score.dart';
 import 'package:sandfall/models/game_state_dto.dart';
 import 'package:sandfall/models/notification_badge.dart';
+import 'package:sandfall/services/daily_challenge_service.dart';
 import 'package:sandfall/services/difficulty_service.dart';
 import 'package:sandfall/services/high_score_service.dart';
 import 'package:sandfall/services/milestone_service.dart';
+import 'package:sandfall/services/notification_service.dart';
 import 'package:sandfall/services/play_games_service.dart';
 import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/services/scoring_service.dart';
@@ -125,6 +127,13 @@ class SandGame extends FlameGame with TapCallbacks {
 
   // Track milestone for celebration overlay
   int _previousMilestone = 0;
+
+  // Daily challenge mode
+  bool isDailyChallengeMode = false;
+  List<int> _dailyColorSequence = [];
+  int _dailySequenceIndex = 0;
+  int _dailyFinalScore = 0;
+  int get dailyFinalScore => _dailyFinalScore;
 
   bool isGameStarted = false;
   bool _isGameOverDetected = false;
@@ -290,7 +299,26 @@ class SandGame extends FlameGame with TapCallbacks {
     final availableColors = DifficultyService.instance.getAvailableColors(
       currentScore,
     );
-    nextColor = availableColors[_random.nextInt(availableColors.length)];
+
+    // Daily challenge: consume pre-seeded sequence
+    if (isDailyChallengeMode && _dailyColorSequence.isNotEmpty) {
+      if (_dailySequenceIndex < _dailyColorSequence.length) {
+        // Clamp index to currently unlocked colors so progressive
+        // difficulty still applies mid-challenge
+        final colorIdx =
+            _dailyColorSequence[_dailySequenceIndex] % availableColors.length;
+        nextColor = availableColors[colorIdx];
+        _dailySequenceIndex++;
+      } else {
+        // Sequence exhausted — end the challenge
+        _endDailyChallenge();
+        return;
+      }
+    } else {
+      // Normal game — random as before
+      nextColor = availableColors[_random.nextInt(availableColors.length)];
+    }
+
     _nextPreviewPopElapsed = 0.0;
   }
 
@@ -1334,8 +1362,25 @@ class SandGame extends FlameGame with TapCallbacks {
     }());
 
     SaveGameService.instance.deleteSavedGame();
-    pauseEngine();
-    overlays.add(GameConfig.gameOverOverlay);
+
+    if (isDailyChallengeMode) {
+      _dailyFinalScore = finalScore;
+      unawaited(() async {
+        try {
+          final updatedState = await DailyChallengeService.instance
+              .recordAttempt(_dailyFinalScore);
+          await NotificationService.instance.cancelStreakWarning();
+          await NotificationService.instance.scheduleDailyReminder(
+            updatedState.streak,
+          );
+        } catch (_) {}
+      }());
+      pauseEngine();
+      overlays.add(GameConfig.dailyResultOverlay);
+    } else {
+      pauseEngine();
+      overlays.add(GameConfig.gameOverOverlay);
+    }
   }
 
   void _drawPlayAreaBorder(Canvas canvas) {
@@ -1514,6 +1559,11 @@ class SandGame extends FlameGame with TapCallbacks {
     _activeBadge = null;
     tutorialCoach.reset();
 
+    isDailyChallengeMode = false;
+    _dailyColorSequence = [];
+    _dailySequenceIndex = 0;
+    _dailyFinalScore = 0;
+
     if (regenerateNextPiece) {
       _generateNextPiece();
     }
@@ -1538,6 +1588,51 @@ class SandGame extends FlameGame with TapCallbacks {
     loadSavedGame();
     isGameStarted = true;
     resumeEngine();
+  }
+
+  void startDailyChallenge() {
+    isDailyChallengeMode = true;
+    // Generate the seeded sequence using the base color count (3).
+    // Colors unlock progressively as score climbs — same as normal game.
+    _dailyColorSequence = DailyChallengeService.instance.generateBlockSequence(
+      3, // base color count — milestone unlocks handle the rest
+    );
+    _dailySequenceIndex = 0;
+    _dailyFinalScore = 0;
+
+    resetGameState(regenerateNextPiece: false);
+    _generateNextPiece();
+    isGameStarted = true;
+    resumeEngine();
+  }
+
+  void _endDailyChallenge() async {
+    _dailyFinalScore = ScoringService.instance.currentScore;
+
+    unawaited(() async {
+      try {
+        await HighScoreService.instance.saveHighScoreIfHigher(_dailyFinalScore);
+        await PlayGamesService.instance.submitScore(_dailyFinalScore);
+      } catch (_) {}
+    }());
+
+    SaveGameService.instance.deleteSavedGame();
+
+    // Record attempt and update streak
+    final updatedState = await DailyChallengeService.instance.recordAttempt(
+      _dailyFinalScore,
+    );
+
+    // Cancel the streak-at-risk nudge since they played today
+    await NotificationService.instance.cancelStreakWarning();
+
+    // Reschedule daily reminder with the updated streak count
+    await NotificationService.instance.scheduleDailyReminder(
+      updatedState.streak,
+    );
+
+    pauseEngine();
+    overlays.add(GameConfig.dailyResultOverlay);
   }
 
   Color _tutorialForceColor() {
