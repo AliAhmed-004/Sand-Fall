@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:sandfall/services/daily_challenge_service.dart';
@@ -16,6 +18,11 @@ class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      debugPrint('[NotificationService] Platform not supported, skipping.');
+      return;
+    }
+
     tz_data.initializeTimeZones();
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -38,6 +45,7 @@ class NotificationService {
   }
 
   Future<void> scheduleDailyReminder(int streakDays) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     await _plugin.cancel(id: _idDaily);
 
     final now = tz.TZDateTime.now(tz.local);
@@ -60,6 +68,7 @@ class NotificationService {
   }
 
   Future<void> scheduleStreakWarning(int streakDays) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     if (streakDays < 2) return;
     await _plugin.cancel(id: _idStreak);
 
@@ -77,7 +86,10 @@ class NotificationService {
     );
   }
 
-  Future<void> cancelStreakWarning() async => _plugin.cancel(id: _idStreak);
+  Future<void> cancelStreakWarning() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    await _plugin.cancel(id: _idStreak);
+  }
 
   NotificationDetails _details() => const NotificationDetails(
     android: AndroidNotificationDetails(
