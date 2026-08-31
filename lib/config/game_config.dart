@@ -19,6 +19,7 @@ class GameConfig {
 
   // Hive keys
   static final String savedGameStateKey = 'saved_game_state';
+  static final String savedDailyChallengeKey = 'saved_daily_challenge';
   static final String playGamesAutoSignInDisabledKey =
       'play_games_auto_sign_in_disabled';
   static final String lastUpdateCheckKey = 'last_update_check';

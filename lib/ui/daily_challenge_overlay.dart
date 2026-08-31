@@ -3,10 +3,8 @@ import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/models/daily_challenge_state.dart';
 import 'package:sandfall/services/daily_challenge_service.dart';
-import 'package:sandfall/services/save_game_service.dart';
 import 'package:sandfall/theme/theme.dart';
 import 'package:sandfall/ui/components/menu_button.dart';
-import 'package:sandfall/ui/confirmation_dialog.dart';
 
 class DailyChallengeOverlay extends StatefulWidget {
   final SandGame game;
@@ -43,18 +41,8 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   }
 
   Future<void> _startChallenge() async {
-    final hasSavedGame = SaveGameService.instance.hasSavedGame();
-    if (hasSavedGame) {
-      final confirmed = await showConfirmationDialog(
-        context,
-        title: 'START DAILY CHALLENGE?',
-        message: 'Your saved game will be lost.',
-      );
-      if (!mounted || !confirmed) return;
-      await SaveGameService.instance.deleteSavedGame();
-      if (!mounted) return;
-    }
-
+    // Daily challenge has its own save slot — never touches the regular save.
+    // No warning needed.
     _game.overlays.remove(GameConfig.dailyChallengeOverlay);
     _game.overlays.add(GameConfig.hudOverlay);
     _game.startDailyChallenge();

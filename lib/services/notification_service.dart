@@ -25,12 +25,11 @@ class NotificationService {
 
     tz_data.initializeTimeZones();
 
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const android = AndroidInitializationSettings('@mipmap/launcher_icon');
     await _plugin.initialize(
       settings: const InitializationSettings(android: android),
     );
 
-    // Missing '<' before AndroidFlutterLocalNotificationsPlugin was the culprit
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -38,52 +37,75 @@ class NotificationService {
     await androidImpl?.requestNotificationsPermission();
 
     final state = await DailyChallengeService.instance.loadState();
-    await scheduleDailyReminder(state.streak);
-    await scheduleStreakWarning(state.streak);
+
+    try {
+      await scheduleDailyReminder(state.streak);
+      await scheduleStreakWarning(state.streak);
+    } catch (e) {
+      debugPrint('[NotificationService] Scheduling failed: $e');
+    }
 
     debugPrint('[NotificationService] Initialized.');
   }
 
   Future<void> scheduleDailyReminder(int streakDays) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    await _plugin.cancel(id: _idDaily);
 
-    final now = tz.TZDateTime.now(tz.local);
-    var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, 18, 0);
-    if (target.isBefore(now)) target = target.add(const Duration(days: 1));
+    try {
+      await _plugin.cancel(id: _idDaily);
 
-    final body = streakDays > 1
-        ? "🔥 Don't break your $streakDays-day streak!"
-        : "🏖️ Today's sand challenge is waiting!";
+      final now = tz.TZDateTime.now(tz.local);
+      var target = tz.TZDateTime(tz.local, now.year, now.month, now.day, 18, 0);
+      if (target.isBefore(now)) target = target.add(const Duration(days: 1));
 
-    await _plugin.zonedSchedule(
-      id: _idDaily,
-      title: 'Daily Challenge is Live!',
-      body: body,
-      scheduledDate: target,
-      notificationDetails: _details(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
+      final body = streakDays > 1
+          ? "🔥 Don't break your $streakDays-day streak!"
+          : "🏖️ Today's sand challenge is waiting!";
+
+      await _plugin.zonedSchedule(
+        id: _idDaily,
+        title: 'Daily Challenge is Live!',
+        body: body,
+        scheduledDate: target,
+        notificationDetails: _details(),
+        // inexactAllowWhileIdle: no special permission needed on Android 12+
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] scheduleDailyReminder failed: $e');
+    }
   }
 
   Future<void> scheduleStreakWarning(int streakDays) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     if (streakDays < 2) return;
-    await _plugin.cancel(id: _idStreak);
 
-    final now = tz.TZDateTime.now(tz.local);
-    final target = tz.TZDateTime(tz.local, now.year, now.month, now.day, 21, 0);
-    if (target.isBefore(now)) return;
+    try {
+      await _plugin.cancel(id: _idStreak);
 
-    await _plugin.zonedSchedule(
-      id: _idStreak,
-      title: 'Streak at risk! ⚠️',
-      body: '🔥 $streakDays days on the line — play before midnight!',
-      scheduledDate: target,
-      notificationDetails: _details(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-    );
+      final now = tz.TZDateTime.now(tz.local);
+      final target = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day,
+        21,
+        0,
+      );
+      if (target.isBefore(now)) return;
+
+      await _plugin.zonedSchedule(
+        id: _idStreak,
+        title: 'Streak at risk! ⚠️',
+        body: '🔥 $streakDays days on the line — play before midnight!',
+        scheduledDate: target,
+        notificationDetails: _details(),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] scheduleStreakWarning failed: $e');
+    }
   }
 
   Future<void> cancelStreakWarning() async {
@@ -97,7 +119,7 @@ class NotificationService {
       _channelName,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
-      icon: '@mipmap/ic_launcher',
+      icon: '@mipmap/launcher_icon',
     ),
   );
 }

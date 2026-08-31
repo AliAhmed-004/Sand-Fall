@@ -28,9 +28,43 @@ class SaveGameService {
     _box = await Hive.openBox(GameConfig.gameStateBox);
   }
 
-  /// Saves game state using sparse binary encoding for minimal I/O.
-  /// Only writes occupied cells as delta-encoded runs.
-  Future<void> saveGame(SparseGameStateDTO state, int score) async {
+  // ─── Regular game slot ───────────────────────────────────────────────────
+
+  Future<void> saveRegularGame(SparseGameStateDTO state, int score) async {
+    await _writeSlot(GameConfig.savedGameStateKey, state, score);
+  }
+
+  Map<String, dynamic>? loadRegularGame() =>
+      _readSlot(GameConfig.savedGameStateKey);
+
+  bool hasRegularGame() => _box.containsKey(GameConfig.savedGameStateKey);
+
+  int? getSavedRegularScore() => _readScore(GameConfig.savedGameStateKey);
+
+  Future<void> deleteRegularGame() async =>
+      _box.delete(GameConfig.savedGameStateKey);
+
+  // ─── Daily challenge slot ─────────────────────────────────────────────────
+
+  Future<void> saveDailyGame(SparseGameStateDTO state, int score) async {
+    await _writeSlot(GameConfig.savedDailyChallengeKey, state, score);
+  }
+
+  Map<String, dynamic>? loadDailyGame() =>
+      _readSlot(GameConfig.savedDailyChallengeKey);
+
+  bool hasDailyGame() => _box.containsKey(GameConfig.savedDailyChallengeKey);
+
+  Future<void> deleteDailyGame() async =>
+      _box.delete(GameConfig.savedDailyChallengeKey);
+
+  // ─── Internal write/read ──────────────────────────────────────────────────
+
+  Future<void> _writeSlot(
+    String key,
+    SparseGameStateDTO state,
+    int score,
+  ) async {
     final bytes = _encodeSparseState(state, score);
     _pendingData = bytes;
 
@@ -41,10 +75,38 @@ class SaveGameService {
       while (_pendingData != null) {
         final dataToWrite = _pendingData!;
         _pendingData = null;
-        await _box.put(GameConfig.savedGameStateKey, dataToWrite);
+        await _box.put(key, dataToWrite);
       }
     } finally {
       _isSaving = false;
+    }
+  }
+
+  Map<String, dynamic>? _readSlot(String key) {
+    final data = _box.get(key);
+    if (data == null) return null;
+
+    try {
+      final bytes = data as Uint8List;
+      final dataView = ByteData.sublistView(bytes);
+      final score = dataView.getInt32(6, Endian.little);
+      final state = _decodeSparseState(bytes, score);
+      if (state == null) return null;
+      return {'state': state, 'score': score};
+    } catch (e) {
+      return null;
+    }
+  }
+
+  int? _readScore(String key) {
+    final data = _box.get(key);
+    if (data == null) return null;
+    try {
+      final bytes = data as Uint8List;
+      final dataView = ByteData.sublistView(bytes);
+      return dataView.getInt32(6, Endian.little);
+    } catch (e) {
+      return null;
     }
   }
 
@@ -143,46 +205,5 @@ class SaveGameService {
     }
   }
 
-  /// Loads the saved game state.
-  /// Returns a map with 'state' (SparseGameStateDTO) and 'score' if a save exists.
-  Map<String, dynamic>? loadGame() {
-    final data = _box.get(GameConfig.savedGameStateKey);
-    if (data == null) return null;
 
-    try {
-      final bytes = data as Uint8List;
-      final dataView = ByteData.sublistView(bytes);
-      final score = dataView.getInt32(6, Endian.little);
-
-      final state = _decodeSparseState(bytes, score);
-      if (state == null) return null;
-
-      return {'state': state, 'score': score};
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Checks if a saved game exists.
-  bool hasSavedGame() {
-    return _box.containsKey(GameConfig.savedGameStateKey);
-  }
-
-  /// Gets the score from the saved game without loading the full state.
-  int? getSavedScore() {
-    final data = _box.get(GameConfig.savedGameStateKey);
-    if (data == null) return null;
-    try {
-      final bytes = data as Uint8List;
-      final dataView = ByteData.sublistView(bytes);
-      return dataView.getInt32(6, Endian.little);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Deletes the saved game.
-  Future<void> deleteSavedGame() async {
-    await _box.delete(GameConfig.savedGameStateKey);
-  }
 }

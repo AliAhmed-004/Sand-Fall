@@ -913,8 +913,11 @@ class SandGame extends FlameGame with TapCallbacks {
       () => SparseGameStateDTO.fromWorld(sandWorld),
     );
 
-    SaveGameService.instance
-        .saveGame(sparseState, ScoringService.instance.currentScore)
+    final saveSlot = isDailyChallengeMode
+        ? SaveGameService.instance.saveDailyGame
+        : SaveGameService.instance.saveRegularGame;
+
+    saveSlot(sparseState, ScoringService.instance.currentScore)
         .whenComplete(() {
           _isAutosaveInFlight = false;
         });
@@ -1361,7 +1364,11 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     }());
 
-    SaveGameService.instance.deleteSavedGame();
+    if (isDailyChallengeMode) {
+      unawaited(SaveGameService.instance.deleteDailyGame());
+    } else {
+      unawaited(SaveGameService.instance.deleteRegularGame());
+    }
 
     if (isDailyChallengeMode) {
       _dailyFinalScore = finalScore;
@@ -1592,18 +1599,90 @@ class SandGame extends FlameGame with TapCallbacks {
 
   void startDailyChallenge() {
     isDailyChallengeMode = true;
-    // Generate the seeded sequence using the base color count (3).
-    // Colors unlock progressively as score climbs — same as normal game.
     _dailyColorSequence = DailyChallengeService.instance.generateBlockSequence(
       3, // base color count — milestone unlocks handle the rest
     );
-    _dailySequenceIndex = 0;
     _dailyFinalScore = 0;
 
-    resetGameState(regenerateNextPiece: false);
-    _generateNextPiece();
+    // Resume a mid-attempt daily save if one exists
+    if (SaveGameService.instance.hasDailyGame()) {
+      // Restore sequence index from how many blocks were consumed.
+      // We approximate this from the saved score — not perfect but safe.
+      // The index will advance naturally from _generateNextPiece onwards.
+      _dailySequenceIndex = 0; // sequence resumes from saved board state
+      loadDailyGame();
+    } else {
+      _dailySequenceIndex = 0;
+      resetGameState(regenerateNextPiece: false);
+      _generateNextPiece();
+    }
+
     isGameStarted = true;
     resumeEngine();
+  }
+
+  void loadDailyGame() {
+    final savedData = SaveGameService.instance.loadDailyGame();
+    if (savedData == null) {
+      resetGameState(regenerateNextPiece: false);
+      _generateNextPiece();
+      return;
+    }
+
+    try {
+      final sparseState = savedData['state'] as SparseGameStateDTO;
+      final score = savedData['score'] as int;
+
+      sandWorld = SandWorld(cols: cols, rows: rows);
+      if (_clearMask.length != cols * rows) {
+        _clearMask = Uint8List(cols * rows);
+      }
+
+      sparseState.applyToWorld(sandWorld);
+      sandWorld.rebuildClusters(sandWorld);
+      sandWorld.primeDirtyTracking();
+      sandWorld.syncGridNow();
+
+      ScoringService.instance.setScore(score);
+
+      _generateNextPiece();
+      _isGameOverDetected = false;
+      _previousMilestone = MilestoneService.instance.getCurrentMilestone(score);
+      _wasStableLastFrame = true;
+      _needsSimulation = false;
+      _needsBridgeEvaluation = false;
+      _accumulator = 0;
+      _placementsSinceLastSave = 0;
+      _hasPendingAutosave = false;
+      _isAutosaveInFlight = false;
+      _isBridgeClearPending = false;
+      _isGameOverSweepActive = false;
+      _isGameOverFinalized = false;
+      _gameOverSweepElapsed = 0;
+      _gameOverSweepY = 0;
+      _gameOverSweepLastClearedRow = -1;
+      _thresholdWarningElapsed = 0;
+      _cellsToClears.clear();
+      _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
+      _clearingElapsedTime = 0;
+      _clearMask.fillRange(0, _clearMask.length, 0);
+      _lastAnimatedCellColors.fillRange(
+        0,
+        _lastAnimatedCellColors.length,
+        _unsetAnimatedColor,
+      );
+      _syncAllCellColorsFromWorld();
+      _updateVertexPositions();
+      _needsGameOverEvaluation = true;
+      _invalidateFloatingScorePainter();
+      _activeComboFeedback = null;
+      tutorialCoach.reset();
+      overlays.remove(GameConfig.tutorialOverlay);
+    } catch (e) {
+      // Corrupted daily save — start fresh
+      resetGameState(regenerateNextPiece: false);
+      _generateNextPiece();
+    }
   }
 
   void _endDailyChallenge() async {
@@ -1616,7 +1695,7 @@ class SandGame extends FlameGame with TapCallbacks {
       } catch (_) {}
     }());
 
-    SaveGameService.instance.deleteSavedGame();
+    await SaveGameService.instance.deleteDailyGame();
 
     // Record attempt and update streak
     final updatedState = await DailyChallengeService.instance.recordAttempt(
@@ -1644,7 +1723,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
   /// Loads a saved game state and rebuilds the world from the saved sparse grid.
   void loadSavedGame() {
-    final savedData = SaveGameService.instance.loadGame();
+    final savedData = SaveGameService.instance.loadRegularGame();
 
     if (savedData == null) {
       return;
