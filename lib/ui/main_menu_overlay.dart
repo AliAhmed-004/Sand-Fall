@@ -126,8 +126,8 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
   @override
   Widget build(BuildContext context) {
     final highScore = HighScoreService.instance.getHighScore();
-    final hasSavedGame = SaveGameService.instance.hasRegularGame();
-    final savedScore = SaveGameService.instance.getSavedRegularScore();
+    final hasSavedGame = SaveGameService.instance.hasSavedGame();
+    final savedScore = SaveGameService.instance.getSavedScore();
 
     return Material(
       color: SandColors.darkBg,
@@ -221,7 +221,7 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
                                 return;
                               }
 
-                              await SaveGameService.instance.deleteRegularGame();
+                              await SaveGameService.instance.deleteSavedGame();
                               if (!context.mounted) {
                                 return;
                               }
@@ -276,7 +276,7 @@ class _MainMenuOverlayState extends State<MainMenuOverlay>
 
                               if (hasSavedGame) {
                                 await SaveGameService.instance
-                                    .deleteRegularGame();
+                                    .deleteSavedGame();
                                 if (!context.mounted) {
                                   return;
                                 }

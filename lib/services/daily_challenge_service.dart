@@ -24,7 +24,7 @@ class DailyChallengeService {
     debugPrint('[DailyChallengeService] Initialized.');
   }
 
-  // ─── Date helpers ────────────────────────────────────────────────────────
+  // ─── Date helpers ─────────────────────────────────────────────────────────
 
   static int get todayNumber {
     final now = DateTime.now();
@@ -42,34 +42,27 @@ class DailyChallengeService {
     return List.generate(blockCount, (_) => rng.nextInt(colorCount));
   }
 
-  // ─── State ───────────────────────────────────────────────────────────────
+  // ─── State ────────────────────────────────────────────────────────────────
 
+  /// Reads the current challenge state.
+  ///
+  /// On a new day, resets attempts and best score so the player gets a fresh
+  /// challenge — but does NOT increment the streak. The streak only moves in
+  /// [recordAttempt], when the player actually plays.
   Future<DailyChallengeState> loadState() async {
     final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
     final today = todayNumber;
-
-    int streak = _box.get(_keyStreak, defaultValue: 0) as int;
+    final streak = _box.get(_keyStreak, defaultValue: 0) as int;
     int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
     int best = _box.get(_keyBestScore, defaultValue: 0) as int;
 
     if (lastDay != today) {
+      // New day — wipe today's progress so the challenge resets.
+      // Do NOT write lastDay or touch streak here; that happens in
+      // recordAttempt() so the streak only counts actual play.
       attempts = 0;
       best = 0;
-
-      if (lastDay == 0) {
-        streak = 1; // first time ever
-      } else if (lastDay == today - 1) {
-        streak++; // consecutive day
-      } else {
-        streak = 1; // missed one or more days
-      }
-
-      await _box.putAll({
-        _keyLastDay: today,
-        _keyStreak: streak,
-        _keyAttempts: attempts,
-        _keyBestScore: best,
-      });
+      await _box.putAll({_keyAttempts: attempts, _keyBestScore: best});
     }
 
     return DailyChallengeState(
@@ -81,16 +74,41 @@ class DailyChallengeService {
     );
   }
 
+  /// Records a completed attempt (play-through or abandon) and updates the
+  /// streak. This is the only place that writes [_keyLastDay] and [_keyStreak].
   Future<DailyChallengeState> recordAttempt(int score) async {
-    final state = await loadState();
-    final newAttempts = (state.attemptsUsed + 1).clamp(0, maxAttempts);
-    final newBest = max(state.bestScore, score);
+    final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
+    final today = todayNumber;
 
-    await _box.putAll({_keyAttempts: newAttempts, _keyBestScore: newBest});
+    int streak = _box.get(_keyStreak, defaultValue: 0) as int;
+    int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
+    int best = _box.get(_keyBestScore, defaultValue: 0) as int;
+
+    // Only update the streak on the very first attempt of a new day.
+    if (lastDay != today) {
+      if (lastDay == 0) {
+        streak = 1; // first time ever playing
+      } else if (lastDay == today - 1) {
+        streak++; // played yesterday — keep the streak going
+      } else {
+        streak = 1; // missed one or more days — streak broken
+      }
+    }
+    // If lastDay == today the streak doesn't change (already counted today).
+
+    final newAttempts = (attempts + 1).clamp(0, maxAttempts);
+    final newBest = max(best, score);
+
+    await _box.putAll({
+      _keyLastDay: today, // mark that the player has played today
+      _keyStreak: streak,
+      _keyAttempts: newAttempts,
+      _keyBestScore: newBest,
+    });
 
     return DailyChallengeState(
-      dayNumber: state.dayNumber,
-      streak: state.streak,
+      dayNumber: today,
+      streak: streak,
       attemptsUsed: newAttempts,
       bestScore: newBest,
       completedToday: newAttempts >= maxAttempts,

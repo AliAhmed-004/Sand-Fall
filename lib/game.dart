@@ -130,6 +130,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
   // Daily challenge mode
   bool isDailyChallengeMode = false;
+  bool _dailyAttemptCounted = false;
   List<int> _dailyColorSequence = [];
   int _dailySequenceIndex = 0;
   int _dailyFinalScore = 0;
@@ -903,6 +904,11 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   void _triggerAutosave() {
+    if (isDailyChallengeMode) {
+      _hasPendingAutosave = false;
+      return;
+    }
+
     if (_isAutosaveInFlight) return;
 
     _isAutosaveInFlight = true;
@@ -913,11 +919,8 @@ class SandGame extends FlameGame with TapCallbacks {
       () => SparseGameStateDTO.fromWorld(sandWorld),
     );
 
-    final saveSlot = isDailyChallengeMode
-        ? SaveGameService.instance.saveDailyGame
-        : SaveGameService.instance.saveRegularGame;
-
-    saveSlot(sparseState, ScoringService.instance.currentScore)
+    SaveGameService.instance
+        .saveGame(sparseState, ScoringService.instance.currentScore)
         .whenComplete(() {
           _isAutosaveInFlight = false;
         });
@@ -1364,30 +1367,26 @@ class SandGame extends FlameGame with TapCallbacks {
       }
     }());
 
-    if (isDailyChallengeMode) {
-      unawaited(SaveGameService.instance.deleteDailyGame());
-    } else {
-      unawaited(SaveGameService.instance.deleteRegularGame());
-    }
-
-    if (isDailyChallengeMode) {
-      _dailyFinalScore = finalScore;
-      unawaited(() async {
-        try {
-          final updatedState = await DailyChallengeService.instance
-              .recordAttempt(_dailyFinalScore);
-          await NotificationService.instance.cancelStreakWarning();
-          await NotificationService.instance.scheduleDailyReminder(
-            updatedState.streak,
-          );
-        } catch (_) {}
-      }());
-      pauseEngine();
-      overlays.add(GameConfig.dailyResultOverlay);
-    } else {
+    if (!isDailyChallengeMode) {
+      unawaited(SaveGameService.instance.deleteSavedGame());
       pauseEngine();
       overlays.add(GameConfig.gameOverOverlay);
+      return;
     }
+
+    _dailyFinalScore = finalScore;
+    unawaited(() async {
+      try {
+        final updatedState = await DailyChallengeService.instance
+            .recordAttempt(_dailyFinalScore);
+        await NotificationService.instance.cancelStreakWarning();
+        await NotificationService.instance.scheduleDailyReminder(
+          updatedState.streak,
+        );
+      } catch (_) {}
+    }());
+    pauseEngine();
+    overlays.add(GameConfig.dailyResultOverlay);
   }
 
   void _drawPlayAreaBorder(Canvas canvas) {
@@ -1567,6 +1566,7 @@ class SandGame extends FlameGame with TapCallbacks {
     tutorialCoach.reset();
 
     isDailyChallengeMode = false;
+    _dailyAttemptCounted = false;
     _dailyColorSequence = [];
     _dailySequenceIndex = 0;
     _dailyFinalScore = 0;
@@ -1598,94 +1598,47 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   void startDailyChallenge() {
-    isDailyChallengeMode = true;
     _dailyColorSequence = DailyChallengeService.instance.generateBlockSequence(
-      3, // base color count — milestone unlocks handle the rest
+      3,
     );
+    _dailySequenceIndex = 0;
     _dailyFinalScore = 0;
 
-    // Resume a mid-attempt daily save if one exists
-    if (SaveGameService.instance.hasDailyGame()) {
-      // Restore sequence index from how many blocks were consumed.
-      // We approximate this from the saved score — not perfect but safe.
-      // The index will advance naturally from _generateNextPiece onwards.
-      _dailySequenceIndex = 0; // sequence resumes from saved board state
-      loadDailyGame();
-    } else {
-      _dailySequenceIndex = 0;
-      resetGameState(regenerateNextPiece: false);
-      _generateNextPiece();
-    }
+    resetGameState(regenerateNextPiece: false);
 
+    // Set after resetGameState since resetGameState clears these fields
+    isDailyChallengeMode = true;
+    _dailyAttemptCounted = false;
+
+    _generateNextPiece();
     isGameStarted = true;
     resumeEngine();
   }
 
-  void loadDailyGame() {
-    final savedData = SaveGameService.instance.loadDailyGame();
-    if (savedData == null) {
-      resetGameState(regenerateNextPiece: false);
-      _generateNextPiece();
+  Future<void> abandonDailyChallenge() async {
+    if (!isDailyChallengeMode || _dailyAttemptCounted) {
       return;
     }
 
-    try {
-      final sparseState = savedData['state'] as SparseGameStateDTO;
-      final score = savedData['score'] as int;
+    _dailyAttemptCounted = true;
+    _dailyFinalScore = ScoringService.instance.currentScore;
 
-      sandWorld = SandWorld(cols: cols, rows: rows);
-      if (_clearMask.length != cols * rows) {
-        _clearMask = Uint8List(cols * rows);
-      }
+    final updatedState = await DailyChallengeService.instance.recordAttempt(
+      _dailyFinalScore,
+    );
 
-      sparseState.applyToWorld(sandWorld);
-      sandWorld.rebuildClusters(sandWorld);
-      sandWorld.primeDirtyTracking();
-      sandWorld.syncGridNow();
-
-      ScoringService.instance.setScore(score);
-
-      _generateNextPiece();
-      _isGameOverDetected = false;
-      _previousMilestone = MilestoneService.instance.getCurrentMilestone(score);
-      _wasStableLastFrame = true;
-      _needsSimulation = false;
-      _needsBridgeEvaluation = false;
-      _accumulator = 0;
-      _placementsSinceLastSave = 0;
-      _hasPendingAutosave = false;
-      _isAutosaveInFlight = false;
-      _isBridgeClearPending = false;
-      _isGameOverSweepActive = false;
-      _isGameOverFinalized = false;
-      _gameOverSweepElapsed = 0;
-      _gameOverSweepY = 0;
-      _gameOverSweepLastClearedRow = -1;
-      _thresholdWarningElapsed = 0;
-      _cellsToClears.clear();
-      _clearingCellAnimations.fillRange(0, _clearingCellAnimations.length, 0);
-      _clearingElapsedTime = 0;
-      _clearMask.fillRange(0, _clearMask.length, 0);
-      _lastAnimatedCellColors.fillRange(
-        0,
-        _lastAnimatedCellColors.length,
-        _unsetAnimatedColor,
-      );
-      _syncAllCellColorsFromWorld();
-      _updateVertexPositions();
-      _needsGameOverEvaluation = true;
-      _invalidateFloatingScorePainter();
-      _activeComboFeedback = null;
-      tutorialCoach.reset();
-      overlays.remove(GameConfig.tutorialOverlay);
-    } catch (e) {
-      // Corrupted daily save — start fresh
-      resetGameState(regenerateNextPiece: false);
-      _generateNextPiece();
-    }
+    await NotificationService.instance.cancelStreakWarning();
+    await NotificationService.instance.scheduleDailyReminder(
+      updatedState.streak,
+    );
   }
 
   void _endDailyChallenge() async {
+    if (_dailyAttemptCounted) {
+      return;
+    }
+    _dailyAttemptCounted = true;
+
     _dailyFinalScore = ScoringService.instance.currentScore;
 
     unawaited(() async {
@@ -1695,17 +1648,11 @@ class SandGame extends FlameGame with TapCallbacks {
       } catch (_) {}
     }());
 
-    await SaveGameService.instance.deleteDailyGame();
-
-    // Record attempt and update streak
     final updatedState = await DailyChallengeService.instance.recordAttempt(
       _dailyFinalScore,
     );
 
-    // Cancel the streak-at-risk nudge since they played today
     await NotificationService.instance.cancelStreakWarning();
-
-    // Reschedule daily reminder with the updated streak count
     await NotificationService.instance.scheduleDailyReminder(
       updatedState.streak,
     );
@@ -1723,7 +1670,7 @@ class SandGame extends FlameGame with TapCallbacks {
 
   /// Loads a saved game state and rebuilds the world from the saved sparse grid.
   void loadSavedGame() {
-    final savedData = SaveGameService.instance.loadRegularGame();
+    final savedData = SaveGameService.instance.loadGame();
 
     if (savedData == null) {
       return;

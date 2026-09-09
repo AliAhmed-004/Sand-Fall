@@ -69,6 +69,21 @@ class _PauseOverlayState extends State<PauseOverlay>
       return;
     }
 
+    if (widget.game.isDailyChallengeMode) {
+      final shouldLeave = await showConfirmationDialog(
+        context,
+        title: 'QUIT CHALLENGE?',
+        message:
+            'Your current progress will be lost and this attempt will be counted.',
+      );
+
+      if (!context.mounted || !shouldLeave) {
+        return;
+      }
+
+      await widget.game.abandonDailyChallenge();
+    }
+
     setState(() {
       _isLeaving = true;
     });
