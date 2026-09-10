@@ -14,8 +14,12 @@ class DailyChallengeService {
   static const _boxName = 'dailyChallenge';
   static const _keyLastDay = 'lastDay';
   static const _keyStreak = 'streak';
+  static const _keyHighestStreak = 'highestStreak';
   static const _keyAttempts = 'attemptsUsed';
   static const _keyBestScore = 'bestScore';
+  static const _keyBestCombo = 'bestCombo';
+  static const _keyBestBlocks = 'bestBlocksRemaining';
+  static const _keyChallengeCompleted = 'challengeCompleted';
 
   late Box _box;
 
@@ -42,6 +46,15 @@ class DailyChallengeService {
     return List.generate(blockCount, (_) => rng.nextInt(colorCount));
   }
 
+  /// Today's target combo length — seeded from the date so it's the same
+  /// for every player. Range: 4–8 combos.
+  static int getDailyComboTarget() {
+    final rng = Random(
+      todaySeed + 7,
+    ); // offset seed so it differs from sequence
+    return 4 + rng.nextInt(5); // 4, 5, 6, 7, or 8
+  }
+
   // ─── State ────────────────────────────────────────────────────────────────
 
   /// Reads the current challenge state.
@@ -53,65 +66,111 @@ class DailyChallengeService {
     final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
     final today = todayNumber;
     final streak = _box.get(_keyStreak, defaultValue: 0) as int;
+    final highestStreak = _box.get(_keyHighestStreak, defaultValue: 0) as int;
     int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
     int best = _box.get(_keyBestScore, defaultValue: 0) as int;
+    int bestCombo = _box.get(_keyBestCombo, defaultValue: 0) as int;
+    int bestBlocks = _box.get(_keyBestBlocks, defaultValue: 0) as int;
+    bool completed =
+        _box.get(_keyChallengeCompleted, defaultValue: false) as bool;
 
     if (lastDay != today) {
-      // New day — wipe today's progress so the challenge resets.
-      // Do NOT write lastDay or touch streak here; that happens in
-      // recordAttempt() so the streak only counts actual play.
       attempts = 0;
       best = 0;
-      await _box.putAll({_keyAttempts: attempts, _keyBestScore: best});
+      bestCombo = 0;
+      bestBlocks = 0;
+      completed = false;
+      await _box.putAll({
+        _keyAttempts: attempts,
+        _keyBestScore: best,
+        _keyBestCombo: bestCombo,
+        _keyBestBlocks: bestBlocks,
+        _keyChallengeCompleted: completed,
+      });
     }
 
     return DailyChallengeState(
       dayNumber: today,
       streak: streak,
+      highestStreak: highestStreak,
       attemptsUsed: attempts,
       bestScore: best,
       completedToday: attempts >= maxAttempts,
+      comboTarget: getDailyComboTarget(),
+      bestCombo: bestCombo,
+      bestBlocksRemaining: bestBlocks,
+      challengeCompleted: completed,
     );
   }
 
-  /// Records a completed attempt (play-through or abandon) and updates the
-  /// streak. This is the only place that writes [_keyLastDay] and [_keyStreak].
-  Future<DailyChallengeState> recordAttempt(int score) async {
+  /// Records a completed attempt and updates the streak.
+  /// [longestCombo] — peak combo reached this attempt.
+  /// [blocksRemaining] — blocks left when target was hit (0 if never hit).
+  Future<DailyChallengeState> recordAttempt([
+    int? legacyScore,
+    int longestCombo = 0,
+    int blocksRemaining = 0,
+  ]) async {
     final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
     final today = todayNumber;
 
     int streak = _box.get(_keyStreak, defaultValue: 0) as int;
+    int highestStreak = _box.get(_keyHighestStreak, defaultValue: 0) as int;
     int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
     int best = _box.get(_keyBestScore, defaultValue: 0) as int;
+    int bestCombo = _box.get(_keyBestCombo, defaultValue: 0) as int;
+    int bestBlocks = _box.get(_keyBestBlocks, defaultValue: 0) as int;
+    bool completed =
+        _box.get(_keyChallengeCompleted, defaultValue: false) as bool;
 
-    // Only update the streak on the very first attempt of a new day.
+    // Streak — only update on first attempt of a new day
     if (lastDay != today) {
       if (lastDay == 0) {
-        streak = 1; // first time ever playing
+        streak = 1;
       } else if (lastDay == today - 1) {
-        streak++; // played yesterday — keep the streak going
+        streak++;
       } else {
-        streak = 1; // missed one or more days — streak broken
+        streak = 1;
       }
     }
-    // If lastDay == today the streak doesn't change (already counted today).
 
+    final attemptScore = legacyScore ?? 0;
     final newAttempts = (attempts + 1).clamp(0, maxAttempts);
-    final newBest = max(best, score);
+    final newBest = max(best, attemptScore);
+    final newBestCombo = max(bestCombo, longestCombo);
+    highestStreak = max(highestStreak, streak);
+
+    // Best blocks remaining: higher is better (more blocks left = more efficient)
+    // Only update if the target was actually hit this attempt
+    final target = getDailyComboTarget();
+    final hitTarget = longestCombo >= target;
+    final newCompleted = completed || hitTarget;
+    final newBestBlocks = hitTarget
+        ? max(bestBlocks, blocksRemaining)
+        : bestBlocks;
 
     await _box.putAll({
-      _keyLastDay: today, // mark that the player has played today
+      _keyLastDay: today,
       _keyStreak: streak,
+      _keyHighestStreak: highestStreak,
       _keyAttempts: newAttempts,
       _keyBestScore: newBest,
+      _keyBestCombo: newBestCombo,
+      _keyBestBlocks: newBestBlocks,
+      _keyChallengeCompleted: newCompleted,
     });
 
     return DailyChallengeState(
       dayNumber: today,
       streak: streak,
+      highestStreak: highestStreak,
       attemptsUsed: newAttempts,
       bestScore: newBest,
       completedToday: newAttempts >= maxAttempts,
+      comboTarget: target,
+      bestCombo: newBestCombo,
+      bestBlocksRemaining: newBestBlocks,
+      challengeCompleted: newCompleted,
     );
   }
 }

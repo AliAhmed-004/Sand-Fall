@@ -18,12 +18,14 @@ class ScoringService {
   int _currentComboCount = 0;
   bool _isInComboSession = false;
   int _lastClearPoints = 0;
+  int _longestCombo = 0; // peak combo reached this session
 
   int get currentScore => _scoreNotifier.value;
   ValueNotifier<int> get scoreNotifier => _scoreNotifier;
   int get blockPlacementPoints => _basePoints;
   int get lastClearPoints => _lastClearPoints;
   int get currentComboCount => _currentComboCount;
+  int get longestCombo => _longestCombo;
 
   // Singleton pattern
   static final ScoringService _instance = ScoringService._internal();
@@ -63,6 +65,11 @@ class ScoringService {
     _lastClearPoints = points;
 
     _currentComboCount++;
+
+    // Track the peak combo reached this game session
+    if (_currentComboCount > _longestCombo) {
+      _longestCombo = _currentComboCount;
+    }
   }
 
   /// Ends the clear session if no bridges were found.
@@ -81,6 +88,7 @@ class ScoringService {
     _currentComboCount = 0;
     _isInComboSession = false;
     _lastClearPoints = 0;
+    _longestCombo = 0;
   }
 
   /// Method to set the score, typically called when loading a saved game
@@ -89,5 +97,6 @@ class ScoringService {
     _currentComboCount = 0;
     _isInComboSession = false;
     _lastClearPoints = 0;
+    _longestCombo = 0;
   }
 }

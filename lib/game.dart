@@ -134,7 +134,17 @@ class SandGame extends FlameGame with TapCallbacks {
   List<int> _dailyColorSequence = [];
   int _dailySequenceIndex = 0;
   int _dailyFinalScore = 0;
+  int _dailyComboTarget = 4;
+  bool _dailyChallengeTargetHit = false;
+  int _dailyBlocksRemainingAtHit = 0;
+  int _dailyPlacementCount = 0;
   int get dailyFinalScore => _dailyFinalScore;
+  int get dailyComboTarget => _dailyComboTarget;
+  bool get dailyChallengeTargetHit => _dailyChallengeTargetHit;
+  int get dailyBlocksRemainingAtHit => _dailyBlocksRemainingAtHit;
+  List<int> get dailyColorSequence => _dailyColorSequence;
+  int get dailySequenceIndex => _dailySequenceIndex;
+  bool get dailyHasPlacedBlocks => _dailyPlacementCount > 0;
 
   bool isGameStarted = false;
   bool _isGameOverDetected = false;
@@ -523,6 +533,9 @@ class SandGame extends FlameGame with TapCallbacks {
 
     // Only generate next piece if placement was successful
     if (sandWorld.placeShape(nextShape, gridX, gridY, nextColor)) {
+      if (isDailyChallengeMode) {
+        _dailyPlacementCount++;
+      }
       _generateNextPiece();
       _needsSimulation = true;
       _needsBridgeEvaluation = true;
@@ -823,6 +836,16 @@ class SandGame extends FlameGame with TapCallbacks {
       // Only end combo if no bridges were found
       // If bridges were found, the board will be unstable again and combo continues
       ScoringService.instance.endClearSessionIfNoBridges(anyBridgesCleared);
+
+      // Check if daily challenge target was hit this frame
+      if (isDailyChallengeMode &&
+          !_dailyChallengeTargetHit &&
+          anyBridgesCleared &&
+          ScoringService.instance.longestCombo >= _dailyComboTarget) {
+        _dailyChallengeTargetHit = true;
+        _dailyBlocksRemainingAtHit =
+            _dailyColorSequence.length - _dailySequenceIndex;
+      }
 
       // Only evaluate game over after all bridge clears have been resolved.
       if (!anyBridgesCleared && _cellsToClears.isEmpty && sandWorld.isStable) {
@@ -1377,8 +1400,11 @@ class SandGame extends FlameGame with TapCallbacks {
     _dailyFinalScore = finalScore;
     unawaited(() async {
       try {
-        final updatedState = await DailyChallengeService.instance
-            .recordAttempt(_dailyFinalScore);
+        final updatedState = await DailyChallengeService.instance.recordAttempt(
+          _dailyFinalScore,
+          ScoringService.instance.longestCombo,
+          _dailyChallengeTargetHit ? _dailyBlocksRemainingAtHit : 0,
+        );
         await NotificationService.instance.cancelStreakWarning();
         await NotificationService.instance.scheduleDailyReminder(
           updatedState.streak,
@@ -1570,6 +1596,10 @@ class SandGame extends FlameGame with TapCallbacks {
     _dailyColorSequence = [];
     _dailySequenceIndex = 0;
     _dailyFinalScore = 0;
+    _dailyComboTarget = 4;
+    _dailyChallengeTargetHit = false;
+    _dailyBlocksRemainingAtHit = 0;
+    _dailyPlacementCount = 0;
 
     if (regenerateNextPiece) {
       _generateNextPiece();
@@ -1609,6 +1639,10 @@ class SandGame extends FlameGame with TapCallbacks {
     // Set after resetGameState since resetGameState clears these fields
     isDailyChallengeMode = true;
     _dailyAttemptCounted = false;
+    _dailyComboTarget = DailyChallengeService.getDailyComboTarget();
+    _dailyChallengeTargetHit = false;
+    _dailyBlocksRemainingAtHit = 0;
+    _dailyPlacementCount = 0;
 
     _generateNextPiece();
     isGameStarted = true;
@@ -1616,7 +1650,9 @@ class SandGame extends FlameGame with TapCallbacks {
   }
 
   Future<void> abandonDailyChallenge() async {
-    if (!isDailyChallengeMode || _dailyAttemptCounted) {
+    if (!isDailyChallengeMode ||
+        _dailyAttemptCounted ||
+        !dailyHasPlacedBlocks) {
       return;
     }
 
@@ -1625,6 +1661,8 @@ class SandGame extends FlameGame with TapCallbacks {
 
     final updatedState = await DailyChallengeService.instance.recordAttempt(
       _dailyFinalScore,
+      ScoringService.instance.longestCombo,
+      _dailyChallengeTargetHit ? _dailyBlocksRemainingAtHit : 0,
     );
 
     await NotificationService.instance.cancelStreakWarning();
@@ -1650,6 +1688,8 @@ class SandGame extends FlameGame with TapCallbacks {
 
     final updatedState = await DailyChallengeService.instance.recordAttempt(
       _dailyFinalScore,
+      ScoringService.instance.longestCombo,
+      _dailyChallengeTargetHit ? _dailyBlocksRemainingAtHit : 0,
     );
 
     await NotificationService.instance.cancelStreakWarning();

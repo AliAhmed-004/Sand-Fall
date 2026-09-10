@@ -32,6 +32,9 @@ class _HudOverlayState extends State<HudOverlay>
   bool _isAnimatingMilestone = false;
   int? _pendingScore;
 
+  // Daily challenge combo tracking
+  int _longestComboThisAttempt = 0;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +92,14 @@ class _HudOverlayState extends State<HudOverlay>
   }
 
   void _onScoreChanged() {
+    // Update daily combo tracker if in daily challenge mode
+    if (widget.game.isDailyChallengeMode) {
+      final longest = ScoringService.instance.longestCombo;
+      if (longest != _longestComboThisAttempt) {
+        setState(() => _longestComboThisAttempt = longest);
+      }
+    }
+
     final score = ScoringService.instance.currentScore;
     final newMilestone = MilestoneService.instance.getCurrentMilestone(score);
 
@@ -200,98 +211,169 @@ class _HudOverlayState extends State<HudOverlay>
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Score (left)
-                  Text(
-                    formattedScore,
-                    style: const TextStyle(
-                      color: SandColors.primaryGold,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Row(
+                    children: [
+                      // Score (left)
+                      Text(
+                        formattedScore,
+                        style: const TextStyle(
+                          color: SandColors.primaryGold,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
 
-                  const SizedBox(width: 20),
+                      const SizedBox(width: 20),
 
-                  // Progress Bar (center - flexible)
-                  Expanded(
-                    child: AnimatedBuilder(
-                      animation: _progressController,
-                      builder: (context, child) {
-                        final progress = _progressAnimation.value;
+                      // Progress Bar (center - flexible)
+                      Expanded(
+                        child: AnimatedBuilder(
+                          animation: _progressController,
+                          builder: (context, child) {
+                            final progress = _progressAnimation.value;
 
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            height: 20,
-                            decoration: BoxDecoration(
-                              color: SandColors.sandyBeige.withAlpha(
-                                51,
-                              ), // 20% opacity
+                            return ClipRRect(
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: SandColors.deepSand,
-                                width: 1,
+                              child: Container(
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: SandColors.sandyBeige.withAlpha(51),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: SandColors.deepSand,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  backgroundColor: Colors.transparent,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Color.lerp(
+                                      SandColors.lightSand,
+                                      SandColors.warmAccent,
+                                      progress,
+                                    )!,
+                                  ),
+                                  minHeight: 20,
+                                ),
                               ),
-                            ),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.transparent,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Color.lerp(
-                                  SandColors.lightSand,
-                                  SandColors.warmAccent,
-                                  progress,
-                                )!,
-                              ),
-                              minHeight: 20,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                            );
+                          },
+                        ),
+                      ),
 
-                  const SizedBox(width: 20),
+                      const SizedBox(width: 20),
 
-                  // Pause Button (right)
-                  SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _togglePause,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: SandColors.warmAccent.withAlpha(
-                              51,
-                            ), // 20% opacity
+                      // Pause Button (right)
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _togglePause,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: SandColors.primaryGold,
-                              width: 2,
-                            ),
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.pause,
-                              color: SandColors.primaryGold,
-                              size: 20,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: SandColors.warmAccent.withAlpha(51),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: SandColors.primaryGold,
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.pause,
+                                  color: SandColors.primaryGold,
+                                  size: 20,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
+
+                  // Daily challenge combo indicator
+                  if (widget.game.isDailyChallengeMode) ...[
+                    const SizedBox(height: 8),
+                    _DailyComboIndicator(
+                      longestCombo: _longestComboThisAttempt,
+                      comboTarget: widget.game.dailyComboTarget,
+                      targetHit: widget.game.dailyChallengeTargetHit,
+                      blocksRemaining:
+                          widget.game.dailyColorSequence.length -
+                          widget.game.dailySequenceIndex,
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DailyComboIndicator extends StatelessWidget {
+  final int longestCombo;
+  final int comboTarget;
+  final bool targetHit;
+  final int blocksRemaining;
+
+  const _DailyComboIndicator({
+    required this.longestCombo,
+    required this.comboTarget,
+    required this.targetHit,
+    required this.blocksRemaining,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (longestCombo / comboTarget).clamp(0.0, 1.0);
+    final color = targetHit ? SandColors.warmAccent : SandColors.lightSand;
+
+    return Row(
+      children: [
+        Text(
+          targetHit ? '🎯 DONE' : '🎯 $longestCombo/$comboTarget',
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontFamily: 'monospace',
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: SandColors.deepSand.withAlpha(80),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                targetHit ? SandColors.warmAccent : SandColors.lightSand,
+              ),
+              minHeight: 6,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '🧱 $blocksRemaining',
+          style: TextStyle(
+            color: SandColors.lightSand.withAlpha(180),
+            fontSize: 12,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
     );
   }
 }

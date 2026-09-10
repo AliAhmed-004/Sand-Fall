@@ -69,7 +69,7 @@ class _PauseOverlayState extends State<PauseOverlay>
       return;
     }
 
-    if (widget.game.isDailyChallengeMode) {
+    if (widget.game.isDailyChallengeMode && widget.game.dailyHasPlacedBlocks) {
       final shouldLeave = await showConfirmationDialog(
         context,
         title: 'QUIT CHALLENGE?',
@@ -137,7 +137,10 @@ class _PauseOverlayState extends State<PauseOverlay>
                       ),
                       decoration: BoxDecoration(
                         color: SandColors.darkBg.withAlpha(240),
-                        border: Border.all(color: SandColors.deepSand, width: 2),
+                        border: Border.all(
+                          color: SandColors.deepSand,
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -190,8 +193,12 @@ class _PauseOverlayState extends State<PauseOverlay>
                               }
 
                               widget.game.startTutorialGame();
-                              widget.game.overlays.remove(GameConfig.pauseOverlay);
-                              widget.game.overlays.add(GameConfig.tutorialOverlay);
+                              widget.game.overlays.remove(
+                                GameConfig.pauseOverlay,
+                              );
+                              widget.game.overlays.add(
+                                GameConfig.tutorialOverlay,
+                              );
                             },
                           ),
 
@@ -231,4 +238,3 @@ class _PauseOverlayState extends State<PauseOverlay>
     );
   }
 }
-

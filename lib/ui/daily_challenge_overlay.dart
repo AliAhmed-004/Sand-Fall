@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/models/daily_challenge_state.dart';
@@ -17,6 +18,7 @@ class DailyChallengeOverlay extends StatefulWidget {
 
 class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   DailyChallengeState? _state;
+  Timer? _timer;
 
   SandGame get _game => widget.game;
 
@@ -24,6 +26,15 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   void initState() {
     super.initState();
     _load();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -34,10 +45,31 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   String get _dateLabel {
     final now = DateTime.now();
     const months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[now.month]} ${now.day}, ${now.year}';
+  }
+
+  String get _timeRemaining {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final remaining = tomorrow.difference(now);
+    final hours = remaining.inHours.toString().padLeft(2, '0');
+    final minutes = (remaining.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (remaining.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 
   Future<void> _startChallenge() async {
@@ -101,10 +133,61 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
 
                     const SizedBox(height: 32),
 
-                    // Streak
+                    // Combo target — the actual challenge goal
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: SandColors.warmAccent.withAlpha(30),
+                        border: Border.all(
+                          color: SandColors.warmAccent.withAlpha(120),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            "TODAY'S GOAL",
+                            style: TextStyle(
+                              fontSize: 11,
+                              letterSpacing: 3,
+                              color: SandColors.lightSand.withAlpha(120),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Hit a ${DailyChallengeService.getDailyComboTarget()}-combo chain',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              color: SandColors.warmAccent,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'using ${DailyChallengeService.blockCount} blocks',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: SandColors.lightSand.withAlpha(140),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _StatRow(
+                      label: 'TIME LEFT',
+                      value: _timeRemaining,
+                      highlight: true,
+                    ),
                     if (state.streak > 0) ...[
                       Text(
-                        '🔥 ${state.streak}-day streak',
+                        '🔥 ${state.streak}-day streak  |  BEST: ${state.highestStreak}',
                         style: const TextStyle(
                           fontSize: 20,
                           color: Colors.orangeAccent,
@@ -134,11 +217,20 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
                             value:
                                 '${state.attemptsUsed} / ${DailyChallengeService.maxAttempts}',
                           ),
-                          if (state.bestScore > 0) ...[
+                          if (state.bestCombo > 0) ...[
                             const SizedBox(height: 8),
                             _StatRow(
-                              label: 'BEST TODAY',
-                              value: state.bestScore.toString(),
+                              label: 'BEST COMBO',
+                              value:
+                                  '${state.bestCombo} / ${state.comboTarget}',
+                              highlight: state.challengeCompleted,
+                            ),
+                          ],
+                          if (state.challengeCompleted) ...[
+                            const SizedBox(height: 8),
+                            _StatRow(
+                              label: 'BLOCKS LEFT',
+                              value: '${state.bestBlocksRemaining}',
                               highlight: true,
                             ),
                           ],
