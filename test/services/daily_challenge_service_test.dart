@@ -15,9 +15,10 @@ void main() {
   });
 
   group('DailyChallengeService — first launch', () {
-    test('streak starts at 1 on first ever play', () async {
+    test('streak starts at 0 before any attempt', () async {
       final state = await DailyChallengeService.instance.loadState();
-      expect(state.streak, 1);
+      expect(state.streak, 0);
+      expect(state.highestStreak, 0);
     });
 
     test('attempts start at 0', () async {
@@ -71,6 +72,35 @@ void main() {
       expect(state.hasAttemptsLeft, false);
     });
 
+    test('first played attempt starts streak at 1', () async {
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
+      expect(state.streak, 1);
+      expect(state.highestStreak, 1);
+    });
+
+    test('highest streak is retained after streak breaks', () async {
+      final box = Hive.box('dailyChallenge');
+      final today = DailyChallengeService.todayNumber;
+      await box.putAll({
+        'lastDay': today - 1,
+        'streak': 4,
+        'highestStreak': 4,
+        'attemptsUsed': 0,
+        'bestScore': 0,
+      });
+
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
+      expect(state.streak, 5);
+      expect(state.highestStreak, 5);
+
+      await box.put('lastDay', today - 2);
+      final resetState = await DailyChallengeService.instance.recordAttempt(
+        1000,
+      );
+      expect(resetState.streak, 1);
+      expect(resetState.highestStreak, 5);
+    });
+
     test('attempts do not exceed maxAttempts', () async {
       // Record more than max
       for (int i = 0; i < DailyChallengeService.maxAttempts + 5; i++) {
@@ -94,7 +124,7 @@ void main() {
         'bestScore': 2000,
       });
 
-      final state = await DailyChallengeService.instance.loadState();
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
       expect(state.streak, 4);
     });
 
@@ -110,7 +140,7 @@ void main() {
         'bestScore': 5000,
       });
 
-      final state = await DailyChallengeService.instance.loadState();
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
       expect(state.streak, 1);
     });
 
@@ -125,15 +155,13 @@ void main() {
         'bestScore': 9000,
       });
 
-      final state = await DailyChallengeService.instance.loadState();
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
       expect(state.streak, 1);
     });
 
     test('streak does not change when same day loaded twice', () async {
-      // First load sets streak to 1
-      await DailyChallengeService.instance.loadState();
-      // Second load same day should not change it
-      final state = await DailyChallengeService.instance.loadState();
+      await DailyChallengeService.instance.recordAttempt(1000);
+      final state = await DailyChallengeService.instance.recordAttempt(1000);
       expect(state.streak, 1);
     });
   });
@@ -193,5 +221,43 @@ void main() {
       final seq6 = DailyChallengeService.instance.generateBlockSequence(6);
       expect(seq3.length, seq6.length);
     });
+  });
+
+  group('DailyChallengeService — challenge metrics', () {
+    test('records best combo and completion when target is hit', () async {
+      final target = DailyChallengeService.getDailyComboTarget();
+      final state = await DailyChallengeService.instance.recordAttempt(
+        1000,
+        target,
+        12,
+      );
+
+      expect(state.bestCombo, target);
+      expect(state.challengeCompleted, isTrue);
+      expect(state.bestBlocksRemaining, 12);
+    });
+
+    test('does not complete challenge when combo misses target', () async {
+      final target = DailyChallengeService.getDailyComboTarget();
+      final state = await DailyChallengeService.instance.recordAttempt(
+        1000,
+        target - 1,
+        12,
+      );
+
+      expect(state.challengeCompleted, isFalse);
+      expect(state.bestBlocksRemaining, 0);
+    });
+
+    test(
+      'no attempt stays uncounted when challenge is left before placement',
+      () async {
+        final before = await DailyChallengeService.instance.loadState();
+        final after = await DailyChallengeService.instance.loadState();
+
+        expect(after.attemptsUsed, before.attemptsUsed);
+        expect(after.streak, before.streak);
+      },
+    );
   });
 }
