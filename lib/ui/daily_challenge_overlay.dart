@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
 import 'package:sandfall/config/game_config.dart';
 import 'package:sandfall/game.dart';
 import 'package:sandfall/models/daily_challenge_state.dart';
@@ -18,7 +17,6 @@ class DailyChallengeOverlay extends StatefulWidget {
 
 class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   DailyChallengeState? _state;
-  Timer? _timer;
 
   SandGame get _game => widget.game;
 
@@ -26,15 +24,6 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
   void initState() {
     super.initState();
     _load();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -62,19 +51,7 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
     return '${months[now.month]} ${now.day}, ${now.year}';
   }
 
-  String get _timeRemaining {
-    final now = DateTime.now();
-    final tomorrow = DateTime(now.year, now.month, now.day + 1);
-    final remaining = tomorrow.difference(now);
-    final hours = remaining.inHours.toString().padLeft(2, '0');
-    final minutes = (remaining.inMinutes % 60).toString().padLeft(2, '0');
-    final seconds = (remaining.inSeconds % 60).toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
-  }
-
   Future<void> _startChallenge() async {
-    // Daily challenge has its own save slot — never touches the regular save.
-    // No warning needed.
     _game.overlays.remove(GameConfig.dailyChallengeOverlay);
     _game.overlays.add(GameConfig.hudOverlay);
     _game.startDailyChallenge();
@@ -86,205 +63,181 @@ class _DailyChallengeOverlayState extends State<DailyChallengeOverlay> {
 
     return Material(
       color: SandColors.darkBg,
-      child: Center(
-        child: state == null
-            ? const CircularProgressIndicator(color: SandColors.primaryGold)
-            : Container(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Spacer(flex: 2),
-
-                    // Date
-                    Text(
-                      _dateLabel,
-                      style: TextStyle(
-                        fontSize: 14,
-                        letterSpacing: 2,
-                        color: SandColors.lightSand.withAlpha(120),
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Title
-                    Text(
-                      'DAILY',
-                      style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: SandColors.primaryGold.withAlpha(200),
-                        letterSpacing: 8,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                    Text(
-                      'CHALLENGE',
-                      style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: SandColors.primaryGold.withAlpha(200),
-                        letterSpacing: 8,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // Combo target — the actual challenge goal
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: SandColors.warmAccent.withAlpha(30),
-                        border: Border.all(
-                          color: SandColors.warmAccent.withAlpha(120),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            "TODAY'S GOAL",
-                            style: TextStyle(
-                              fontSize: 11,
-                              letterSpacing: 3,
-                              color: SandColors.lightSand.withAlpha(120),
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Hit a ${DailyChallengeService.getDailyComboTarget()}-combo chain',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              color: SandColors.warmAccent,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'using ${DailyChallengeService.blockCount} blocks',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: SandColors.lightSand.withAlpha(140),
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _StatRow(
-                      label: 'TIME LEFT',
-                      value: _timeRemaining,
-                      highlight: true,
-                    ),
-                    if (state.streak > 0) ...[
+      child: SafeArea(
+        child: Center(
+          child: state == null
+              ? const CircularProgressIndicator(color: SandColors.primaryGold)
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 40,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Date
                       Text(
-                        '🔥 ${state.streak}-day streak  |  BEST: ${state.highestStreak}',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          color: Colors.orangeAccent,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    // Stats card
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 20,
-                      ),
-                      decoration: BoxDecoration(
-                        color: SandColors.darkBg.withAlpha(160),
-                        border: Border.all(
-                          color: SandColors.lightSand.withAlpha(60),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          _StatRow(
-                            label: 'ATTEMPTS',
-                            value:
-                                '${state.attemptsUsed} / ${DailyChallengeService.maxAttempts}',
-                          ),
-                          if (state.bestCombo > 0) ...[
-                            const SizedBox(height: 8),
-                            _StatRow(
-                              label: 'BEST COMBO',
-                              value:
-                                  '${state.bestCombo} / ${state.comboTarget}',
-                              highlight: state.challengeCompleted,
-                            ),
-                          ],
-                          if (state.challengeCompleted) ...[
-                            const SizedBox(height: 8),
-                            _StatRow(
-                              label: 'BLOCKS LEFT',
-                              value: '${state.bestBlocksRemaining}',
-                              highlight: true,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // Action
-                    if (state.completedToday) ...[
-                      Text(
-                        'COME BACK TOMORROW',
+                        _dateLabel,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           letterSpacing: 2,
                           color: SandColors.lightSand.withAlpha(100),
                           fontFamily: 'monospace',
                         ),
                       ),
-                      const SizedBox(height: 4),
+
+                      const SizedBox(height: 8),
+
+                      // Title
                       Text(
-                        'All ${DailyChallengeService.maxAttempts} attempts used',
+                        'DAILY CHALLENGE',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 12,
-                          color: SandColors.lightSand.withAlpha(60),
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: SandColors.primaryGold.withAlpha(200),
+                          letterSpacing: 6,
                           fontFamily: 'monospace',
                         ),
                       ),
-                    ] else
-                      MenuButton(
-                        label: state.attemptsUsed == 0
-                            ? 'START CHALLENGE'
-                            : 'TRY AGAIN',
-                        sublabel: state.attemptsUsed > 0
-                            ? '${DailyChallengeService.maxAttempts - state.attemptsUsed} attempts left'
-                            : null,
-                        onPressed: _startChallenge,
+
+                      // Streak — emotional hook right under the title
+                      if (state.streak > 0) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          '🔥 ${state.streak}-day streak',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            color: Colors.orangeAccent,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 32),
+
+                      // Goal — the single most important piece of info
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 20,
+                        ),
+                        decoration: BoxDecoration(
+                          color: SandColors.warmAccent.withAlpha(25),
+                          border: Border.all(
+                            color: SandColors.warmAccent.withAlpha(100),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Hit a ${DailyChallengeService.getDailyComboTarget()}-combo chain',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                color: SandColors.warmAccent,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Place ${DailyChallengeService.blockCount} blocks · 3 attempts',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: SandColors.lightSand.withAlpha(120),
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 28),
 
-                    MenuButton.secondary(
-                      label: 'BACK',
-                      onPressed: () {
-                        _game.overlays.remove(GameConfig.dailyChallengeOverlay);
-                        _game.overlays.add(GameConfig.mainMenuOverlay);
-                      },
-                    ),
+                      // Stats — flat rows, no extra box
+                      _StatRow(
+                        label: 'Attempts used',
+                        value:
+                            '${state.attemptsUsed} / ${DailyChallengeService.maxAttempts}',
+                      ),
 
-                    const Spacer(flex: 2),
-                  ],
+                      if (state.bestCombo > 0) ...[
+                        const SizedBox(height: 12),
+                        _StatRow(
+                          label: 'Best combo today',
+                          value: '${state.bestCombo} / ${state.comboTarget}',
+                          highlight: state.challengeCompleted,
+                        ),
+                      ],
+
+                      if (state.challengeCompleted) ...[
+                        const SizedBox(height: 12),
+                        _StatRow(
+                          label: 'Best efficiency',
+                          value: '${state.bestBlocksRemaining} blocks left',
+                          highlight: true,
+                        ),
+                      ],
+
+                      const SizedBox(height: 40),
+
+                      // Primary action
+                      if (state.completedToday) ...[
+                        Text(
+                          'Come back tomorrow',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: SandColors.lightSand.withAlpha(120),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'All ${DailyChallengeService.maxAttempts} attempts used',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SandColors.lightSand.withAlpha(60),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ] else
+                        MenuButton(
+                          label: state.attemptsUsed == 0
+                              ? 'START CHALLENGE'
+                              : 'TRY AGAIN',
+                          sublabel: state.attemptsUsed > 0
+                              ? '${DailyChallengeService.maxAttempts - state.attemptsUsed} attempts left'
+                              : null,
+                          onPressed: _startChallenge,
+                        ),
+
+                      const SizedBox(height: 20),
+
+                      // Back — text link, low visual weight
+                      TextButton(
+                        onPressed: () {
+                          _game.overlays.remove(
+                            GameConfig.dailyChallengeOverlay,
+                          );
+                          _game.overlays.add(GameConfig.mainMenuOverlay);
+                        },
+                        child: Text(
+                          'Back',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: SandColors.lightSand.withAlpha(120),
+                            fontFamily: 'monospace',
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -309,20 +262,19 @@ class _StatRow extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 13,
-            letterSpacing: 2,
-            color: SandColors.lightSand.withAlpha(120),
+            fontSize: 14,
+            color: SandColors.lightSand.withAlpha(140),
             fontFamily: 'monospace',
           ),
         ),
         Text(
           value,
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w300,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
             color: highlight
-                ? SandColors.primaryGold.withAlpha(200)
-                : SandColors.lightSand.withAlpha(180),
+                ? SandColors.warmAccent.withAlpha(220)
+                : SandColors.lightSand.withAlpha(200),
             fontFamily: 'monospace',
           ),
         ),

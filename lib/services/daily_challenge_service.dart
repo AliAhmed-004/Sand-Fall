@@ -49,23 +49,22 @@ class DailyChallengeService {
   /// Today's target combo length — seeded from the date so it's the same
   /// for every player. Range: 4–8 combos.
   static int getDailyComboTarget() {
-    final rng = Random(
-      todaySeed + 7,
-    ); // offset seed so it differs from sequence
-    return 4 + rng.nextInt(5); // 4, 5, 6, 7, or 8
+    final rng = Random(todaySeed + 7);
+    return 4 + rng.nextInt(5);
   }
 
   // ─── State ────────────────────────────────────────────────────────────────
 
   /// Reads the current challenge state.
   ///
-  /// On a new day, resets attempts and best score so the player gets a fresh
-  /// challenge — but does NOT increment the streak. The streak only moves in
-  /// [recordAttempt], when the player actually plays.
+  /// On a new day, resets attempts/scores so the player gets a fresh challenge.
+  /// If the player missed one or more days, the streak is reset to 0 here.
+  /// The streak is only INCREMENTED in [recordAttempt] — never here.
+  /// _keyLastDay is only WRITTEN in [recordAttempt] — never here.
   Future<DailyChallengeState> loadState() async {
     final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
     final today = todayNumber;
-    final streak = _box.get(_keyStreak, defaultValue: 0) as int;
+    int streak = _box.get(_keyStreak, defaultValue: 0) as int;
     final highestStreak = _box.get(_keyHighestStreak, defaultValue: 0) as int;
     int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
     int best = _box.get(_keyBestScore, defaultValue: 0) as int;
@@ -75,17 +74,27 @@ class DailyChallengeService {
         _box.get(_keyChallengeCompleted, defaultValue: false) as bool;
 
     if (lastDay != today) {
+      // New day — reset today's progress
       attempts = 0;
       best = 0;
       bestCombo = 0;
       bestBlocks = 0;
       completed = false;
+
+      // If the player missed one or more days, break the streak immediately
+      // so the entry screen shows 0 rather than a stale number.
+      // We do NOT write _keyLastDay here — that only happens in recordAttempt().
+      if (lastDay != 0 && lastDay < today - 1) {
+        streak = 0;
+      }
+
       await _box.putAll({
         _keyAttempts: attempts,
         _keyBestScore: best,
         _keyBestCombo: bestCombo,
         _keyBestBlocks: bestBlocks,
         _keyChallengeCompleted: completed,
+        _keyStreak: streak,
       });
     }
 
@@ -113,7 +122,6 @@ class DailyChallengeService {
   ]) async {
     final lastDay = _box.get(_keyLastDay, defaultValue: 0) as int;
     final today = todayNumber;
-
     int streak = _box.get(_keyStreak, defaultValue: 0) as int;
     int highestStreak = _box.get(_keyHighestStreak, defaultValue: 0) as int;
     int attempts = _box.get(_keyAttempts, defaultValue: 0) as int;
@@ -123,16 +131,18 @@ class DailyChallengeService {
     bool completed =
         _box.get(_keyChallengeCompleted, defaultValue: false) as bool;
 
-    // Streak — only update on first attempt of a new day
+    // Increment streak only on the first attempt of a new day
     if (lastDay != today) {
       if (lastDay == 0) {
-        streak = 1;
+        streak = 1; // first time ever playing
       } else if (lastDay == today - 1) {
-        streak++;
+        streak++; // played yesterday — keep streak going
       } else {
-        streak = 1;
+        streak = 1; // missed days — streak already reset by
+        // loadState(), start fresh at 1
       }
     }
+    // lastDay == today: streak unchanged (already counted today)
 
     final attemptScore = legacyScore ?? 0;
     final newAttempts = (attempts + 1).clamp(0, maxAttempts);
@@ -140,8 +150,6 @@ class DailyChallengeService {
     final newBestCombo = max(bestCombo, longestCombo);
     highestStreak = max(highestStreak, streak);
 
-    // Best blocks remaining: higher is better (more blocks left = more efficient)
-    // Only update if the target was actually hit this attempt
     final target = getDailyComboTarget();
     final hitTarget = longestCombo >= target;
     final newCompleted = completed || hitTarget;
